@@ -1,0 +1,32 @@
+name: Backup diário Terra & Safra
+
+on:
+  schedule:
+    # 00:00 UTC = 21:00 horário de Brasília (UTC-3, sem horário de verão desde 2019)
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+    # ↑ isso permite rodar manualmente também, clicando em "Run workflow" na aba Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências
+        run: npm install
+        working-directory: ./backup-automatico
+
+      - name: Rodar o backup e enviar o e-mail
+        run: npm run backup
+        working-directory: ./backup-automatico
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
