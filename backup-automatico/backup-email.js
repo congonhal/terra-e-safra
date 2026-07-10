@@ -85,7 +85,7 @@ async function main() {
 
   function saldo(l) { return Number(l.quantidade_inicial || 0) - Number(l.qtd_vendida || 0); }
   function totalVendido(l) { return Number(l.qtd_vendida || 0) * Number(l.preco_venda_final || 0); }
-  function totalInvestido(l) { return Number(l.quantidade_inicial || 0) * Number(l.valor_pago || 0); }
+  function totalInvestido(l) { return (Number(l.quantidade_inicial || 0) - Number(l.qtd_brinde || 0)) * Number(l.valor_pago || 0); }
   function impostoPago(l) { return Number(l.preco_venda_final || 0) * (Number(l.imposto_pct || 0) / 100) * Number(l.qtd_vendida || 0); }
   function lucroEstimado(l) { return (Number(l.preco_venda_final || 0) - Number(l.valor_pago || 0)) * Number(l.qtd_vendida || 0); }
   function precoSugerido(l) {
@@ -127,7 +127,7 @@ async function main() {
       'Produto': p.name || '', 'Categoria': categoriaLabel(p.tipo), 'Variante/Tamanho': l.variante || '',
       'Lote': l.nome, 'Nota Fiscal': l.com_nf === false ? 'Sem NF' : 'Com NF',
       'Fornecedor': l.fornecedor || '', 'Contato Fornecedor': l.fornecedor_contato || '',
-      'Unidade': l.observacao || 'un', 'Qtd Comprada': l.quantidade_inicial, 'Qtd Vendida': l.qtd_vendida || 0,
+      'Unidade': l.observacao || 'un', 'Qtd Comprada': l.quantidade_inicial, 'Qtd Vendida': l.qtd_vendida || 0, 'Qtd Brinde (grátis)': l.qtd_brinde || 0,
       'Saldo': saldo(l), 'Valor Pago (unitário)': Number(l.valor_pago || 0), 'Imposto %': Number(l.imposto_pct || 0),
       'Margem %': Number(l.margem_pct || 0), 'Preço Sugerido': sug !== null ? Number(sug.toFixed(2)) : '',
       'Preço de Venda Final': Number(l.preco_venda_final || 0), 'Total Investido': Number(totalInvestido(l).toFixed(2)),
