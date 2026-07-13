@@ -63,6 +63,10 @@ async function main() {
     { data: aportes, error: e7 },
     { data: retiradas, error: e8 },
     { data: entradasExtra, error: e9 },
+    { data: movimentacoes, error: e10 },
+    { data: vendasAvista, error: e11 },
+    { data: vendasAvistaItens, error: e12 },
+    { data: precosHistorico, error: e13 },
   ] = await Promise.all([
     sb.from('produtos').select('*'),
     sb.from('lotes').select('*'),
@@ -73,8 +77,12 @@ async function main() {
     sb.from('socios_aportes').select('*'),
     sb.from('socios_retiradas').select('*'),
     sb.from('entradas_extra').select('*'),
+    sb.from('lotes_movimentacoes').select('*'),
+    sb.from('vendas_avista').select('*'),
+    sb.from('vendas_avista_itens').select('*'),
+    sb.from('precos_historico').select('*'),
   ]);
-  const erro = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9;
+  const erro = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9 || e10 || e11 || e12 || e13;
   if (erro) { throw new Error('Erro ao buscar dados: ' + erro.message); }
 
   const vendas = vendasFiado.map(v => ({
@@ -82,6 +90,16 @@ async function main() {
     itens: vendasItens.filter(it => it.venda_id === v.id),
     pagamentos: vendasPagamentos.filter(p => p.venda_id === v.id),
   }));
+  const avista = vendasAvista.map(v => ({
+    ...v,
+    itens: vendasAvistaItens.filter(it => it.venda_id === v.id),
+  }));
+
+  function todosPagamentosFiado() {
+    const lista = [];
+    vendas.forEach(v => (v.pagamentos || []).forEach(p => lista.push({ ...p, cliente_nome: v.cliente_nome })));
+    return lista;
+  }
 
   function saldo(l) { return Number(l.quantidade_inicial || 0) - Number(l.qtd_vendida || 0); }
   function totalVendido(l) { return Number(l.qtd_vendida || 0) * Number(l.preco_venda_final || 0); }
@@ -226,7 +244,7 @@ async function main() {
   bookAppend(wbFiado, vendasLinhas, 'Vendas');
 
   const pagamentosLinhas = [];
-  vendas.forEach(v => (v.pagamentos || []).forEach(p => pagamentosLinhas.push({ Cliente: v.cliente_nome, 'Data do pagamento': formatDate(p.data_pagamento), 'Valor (R$)': Number(Number(p.valor).toFixed(2)) })));
+  vendas.forEach(v => (v.pagamentos || []).forEach(p => pagamentosLinhas.push({ Cliente: v.cliente_nome, 'Data do pagamento': formatDate(p.data_pagamento), 'Valor (R$)': Number(Number(p.valor).toFixed(2)), 'Forma de pagamento': p.forma_pagamento || 'não classificado' })));
   bookAppend(wbFiado, pagamentosLinhas, 'Pagamentos');
 
   const nomesClientes = Array.from(new Set(vendas.map(v => v.cliente_nome))).sort();
@@ -236,6 +254,40 @@ async function main() {
     return { Cliente: nome, Situação: cor === 'vermelho' ? 'Vermelho (evitar fiado)' : cor === 'amarelo' ? 'Amarelo (atenção)' : 'Verde (em dia)', 'Dias sem pagamento': dias === null ? '' : dias };
   });
   bookAppend(wbFiado, clientesLinhas, 'Reputação Clientes');
+
+  console.log('Montando planilha de Vendas à Vista...');
+  const wbAvista = XLSX.utils.book_new();
+  const formaLabel = { dinheiro: 'Dinheiro', pix: 'PIX', cartao_credito: 'Cartão Crédito', cartao_debito: 'Cartão Débito' };
+  const linhasAvista = [];
+  avista.forEach(v => {
+    v.itens.forEach(it => {
+      linhasAvista.push({
+        Data: formatDate(v.data), Produto: it.produto_nome, Quantidade: it.quantidade, 'Valor unit. (R$)': Number(it.valor_unitario),
+        'Subtotal (R$)': Number((it.quantidade * it.valor_unitario).toFixed(2)), 'Valor bruto da venda (R$)': Number(Number(v.valor_bruto).toFixed(2)),
+        'Valor recebido (R$)': Number(Number(v.valor_recebido).toFixed(2)),
+        'Forma de pagamento': v.forma_pagamento ? formaLabel[v.forma_pagamento] : 'pendente de classificar',
+        'Taxa maquininha (R$)': v.taxa_maquina_valor ? Number(Number(v.taxa_maquina_valor).toFixed(2)) : 0,
+      });
+    });
+  });
+  bookAppend(wbAvista, linhasAvista, 'Vendas à Vista');
+
+  const pagamentosFiadoLinhas = todosPagamentosFiado().map(p => ({
+    Cliente: p.cliente_nome, 'Data do pagamento': formatDate(p.data_pagamento), 'Valor (R$)': Number(Number(p.valor).toFixed(2)),
+    'Forma de pagamento': p.forma_pagamento ? formaLabel[p.forma_pagamento] : 'pendente de classificar',
+    'Taxa maquininha (R$)': p.taxa_maquina_valor ? Number(Number(p.taxa_maquina_valor).toFixed(2)) : 0,
+  }));
+  bookAppend(wbAvista, pagamentosFiadoLinhas, 'Pagamentos Fiado Classificados');
+
+  console.log('Montando planilha de Histórico de Preços...');
+  const wbPrecos = XLSX.utils.book_new();
+  const linhasPrecos = precosHistorico
+    .map(ph => {
+      const p = produtos.find(pr => pr.id === ph.produto_id);
+      return { Produto: p ? p.name : '—', Categoria: p ? categoriaLabel(p.tipo) : '', Data: formatDate(ph.data), 'Preço (R$)': Number(Number(ph.preco).toFixed(2)) };
+    })
+    .sort((a, b) => a.Produto.localeCompare(b.Produto) || a.Data.localeCompare(b.Data));
+  bookAppend(wbPrecos, linhasPrecos, 'Histórico de Preços');
 
   console.log('Enviando e-mail...');
   const transporter = nodemailer.createTransport({
@@ -247,12 +299,14 @@ async function main() {
     from: `Terra & Safra <${EMAIL_USER}>`,
     to: EMAIL_DESTINO,
     subject: `📦 Backup diário Terra & Safra — ${dataHoje}`,
-    text: `Segue em anexo o backup automático de hoje (${dataHoje}):\n\n- Estoque.xlsx\n- Vencimentos.xlsx\n- Financeiro.xlsx\n- VendasFiado.xlsx\n\nEsse e-mail é gerado e enviado sozinho, todo dia às 21h, direto do sistema.`,
+    text: `Segue em anexo o backup automático de hoje (${dataHoje}):\n\n- Estoque.xlsx\n- Vencimentos.xlsx\n- Financeiro.xlsx\n- VendasFiado.xlsx\n- VendasAvista.xlsx\n- HistoricoPrecos.xlsx\n\nEsse e-mail é gerado e enviado sozinho, todo dia às 21h, direto do sistema.`,
     attachments: [
       { filename: `Estoque-${hojeStr()}.xlsx`, content: bufferOf(wbEstoque) },
       { filename: `Vencimentos-${hojeStr()}.xlsx`, content: bufferOf(wbVenc) },
       { filename: `Financeiro-${hojeStr()}.xlsx`, content: bufferOf(wbFin) },
       { filename: `VendasFiado-${hojeStr()}.xlsx`, content: bufferOf(wbFiado) },
+      { filename: `VendasAvista-${hojeStr()}.xlsx`, content: bufferOf(wbAvista) },
+      { filename: `HistoricoPrecos-${hojeStr()}.xlsx`, content: bufferOf(wbPrecos) },
     ],
   });
   console.log('Backup enviado com sucesso para', EMAIL_DESTINO);
