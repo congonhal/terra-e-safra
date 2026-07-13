@@ -16,10 +16,10 @@ const EMAIL_DESTINO = 'biancamarisant@gmail.com';
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // ---------- Helpers (espelham a lógica do app) ----------
-const TIPO_LABEL = { remedio: 'Remédios', racao: 'Rações', proteinado: 'Proteinados' };
+const TIPO_LABEL = { remedio: 'Medicamentos', racao: 'Rações', proteinado: 'Nutrição Animal' };
 function categoriaLabel(tipo) { return TIPO_LABEL[tipo] || tipo; }
 function isDescricaoTipo(tipo) { return tipo === 'remedio' || tipo === 'racao' || tipo === 'proteinado'; }
-function tipoLabel(tipo) { return tipo === 'remedio' ? 'Remédio' : tipo === 'racao' ? 'Ração' : 'Proteinado'; }
+function tipoLabel(tipo) { return tipo === 'remedio' ? 'Medicamento' : tipo === 'racao' ? 'Ração' : 'Nutrição Animal'; }
 
 function hojeStr() {
   const now = new Date();
