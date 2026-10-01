@@ -3488,7 +3488,6 @@ document.getElementById('novoLoteBtn').onclick = ()=>{
   document.getElementById('nlImposto').value=4; document.getElementById('nlMargem').value=10;
   document.getElementById('nlCategoriaCustomWrap').classList.add('hidden');
   document.getElementById('nlValidade').value = '';
-  document.getElementById('nlValidadeWrap').classList.toggle('hidden', document.getElementById('nlCategoria').value!=='remedio');
   document.getElementById('nlQtdLabel').textContent = 'Qtd comprada';
   document.getElementById('nlPrecoVendaLabel').textContent = 'Preço de venda final';
   document.getElementById('nlValorPagoLabel').textContent = 'Valor pago (unit.)';
@@ -3726,15 +3725,19 @@ function atualizarPlaceholderNomeLote(){
   input.placeholder = cat==='remedio'
     ? 'Digite o nº do lote do fabricante (fica na caixinha) — ou deixe em branco'
     : 'Ex: fornecedor, safra... ou deixe em branco pra usar a data';
-  // o campo "nº do lote" só faz sentido pra medicamentos (rastreio de validade/lote do fabricante);
-  // pros demais, o sistema já usa a data automaticamente como identificador internamente.
+  // o campo "nº do lote" e o de "validade" só fazem sentido pra medicamentos (rastreio de
+  // validade/lote do fabricante); pros demais, o sistema já usa a data automaticamente como
+  // identificador interno. IMPORTANTE: usa categoriaEfetivaNovoLote() (não o <select> cru) porque
+  // quando o produto digitado já existe, o dropdown de categoria fica escondido e nunca é tocado —
+  // usar o valor cru dele aqui fazia o campo de Validade sumir ao adicionar um lote novo pra um
+  // medicamento JÁ cadastrado (o caso mais comum), mesmo esse produto sendo remédio de verdade.
   const ehRemedio = cat==='remedio';
   document.getElementById('nlNomeWrap').classList.toggle('hidden', !ehRemedio);
-  if(!ehRemedio) input.value = '';
+  document.getElementById('nlValidadeWrap').classList.toggle('hidden', !ehRemedio);
+  if(!ehRemedio){ input.value = ''; document.getElementById('nlValidade').value = ''; }
 }
 document.getElementById('nlCategoria').addEventListener('change', function(){
   document.getElementById('nlCategoriaCustomWrap').classList.toggle('hidden', this.value!=='__outra__');
-  document.getElementById('nlValidadeWrap').classList.toggle('hidden', this.value!=='remedio');
   atualizarPlaceholderNomeLote();
   // Produto novo de Fertilizantes: já deixa a unidade em "saco", porque fertilizante é sempre
   // controlado por saco — não faz sentido oferecer as outras unidades pra essa categoria.
