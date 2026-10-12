@@ -695,7 +695,8 @@ td input.wide{width:74px;}
         </div>
         <div class="fiado-sub hidden" id="fiadoSub-joaomarcos">
           <p class="search-hint" style="margin-bottom:14px;">Vendas marcadas como "João Marcos" (🩺) não aparecem na lista normal acima — ficam só aqui. Fiado dele você dá baixa com desconto automático de 10%. À vista, já cadastra com o valor certo direto na venda.</p>
-          <div class="fin-cards" id="jmResumoCards" style="margin:14px 0;"></div>
+          <div class="fin-cards" id="jmResumoCards" style="margin:14px 0 4px;"></div>
+          <p class="search-hint" id="jmResumoCardsNota" style="margin-bottom:14px;"></p>
 
           <div class="form-section-label">Fiado em aberto (João Marcos)</div>
           <div id="jmFiadoList"></div>
@@ -8613,6 +8614,7 @@ function renderJoaoMarcos(){
     <div style="min-width:18px;"></div>
     <div class="fin-card"><span class="fin-label">Total de vendas</span><span class="fin-value">R$ ${brl(totalFiado)}</span></div>
   `;
+  document.getElementById('jmResumoCardsNota').textContent = '💡 O saldo devedor acima já está com os 10% de desconto padrão dele aplicados (mesmo nas contas ainda em aberto) — é o valor que ele realmente vai pagar quando quitar.';
 
   // corpo com a tabela de itens (preço original x preço com desconto) + totais, comum às vendas abertas e quitadas.
   // Em venda ABERTA (sem pagamento ainda), "com desconto"/total/saldo são uma PRÉVIA dos 10% padrão dele
