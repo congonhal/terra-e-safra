@@ -682,6 +682,7 @@ td input.wide{width:74px;}
           <button class="subtab" data-fiadosub="joaomarcos">🩺 João Marcos</button>
         </div>
         <div class="fiado-sub" id="fiadoSub-lista">
+          <div class="resumo-grand-total" style="margin-bottom:14px;"><span>💰 Total em fiado a receber</span><span id="vendasTotalAReceber">R$ 0,00</span></div>
           <div class="filter-row">
             <span class="count-txt" id="vendasCount"></span>
             <button class="atraso-btn" id="btnAtrasados">⚠ Ver só clientes em alerta</button>
@@ -4422,6 +4423,9 @@ function renderVendas(){
   let base = vendas.filter(v=>saldoDevedorFiado(v)>0 && !ehVendaJoaoMarcos(v));
   if(filtroAtrasados) base = base.filter(v=>statusClienteCor(v.cliente_nome)!=='verde');
   document.getElementById('vendasCount').textContent = `${base.length} venda(s) em aberto`;
+  // Soma o saldo devedor de tudo que está na lista (respeita o filtro "só atrasados", quando ativo)
+  const totalAReceber = base.reduce((s,v)=>s+saldoDevedorFiado(v),0);
+  document.getElementById('vendasTotalAReceber').textContent = 'R$ '+brl(totalAReceber);
 
   // agrupa por cliente + dia da venda
   const grupos = {};
@@ -8572,13 +8576,37 @@ function jmDescontoPctVenda(v){
   if(totalOriginal<=0) return 0;
   return Math.round((1-(total/totalOriginal))*1000)/10; // 1 casa decimal
 }
+// Pré-visualização do desconto de 10% do João Marcos — SÓ pra exibição nessa aba dele, em vendas
+// ainda abertas (sem nenhum pagamento registrado ainda). Antes de pagar, ele sempre vai pagar com
+// 10% de desconto — mas isso só fica "oficial" (valor_final/saldo devedor real, usado no resto do
+// sistema) no momento que o pagamento é de fato registrado. Enquanto isso não acontece, o valor
+// cheio (sem desconto) é o que fica gravado no banco — essas funções aqui NÃO mexem nisso, nem em
+// nenhuma outra tela: só adiantam pro usuário, visualmente, quanto ele vai pagar quando vier quitar.
+const JM_DESCONTO_PADRAO_PCT = 10;
+function jmTemPagamentoReal(v){
+  return (v.pagamentos && v.pagamentos.length>0) || v.status==='pago';
+}
+function jmTotalPreview(v){
+  if(jmTemPagamentoReal(v)) return totalVendaFiado(v);
+  return Math.round(jmTotalOriginalVenda(v) * (1 - JM_DESCONTO_PADRAO_PCT/100) * 100) / 100;
+}
+function jmItemPreview(v, it){
+  if(jmTemPagamentoReal(v)) return valorAjustadoItem(v, it, 'fiado');
+  return Math.round(Number(it.quantidade)*Number(it.valor_unitario) * (1 - JM_DESCONTO_PADRAO_PCT/100) * 100) / 100;
+}
+function jmDescontoPctPreview(v){
+  return jmTemPagamentoReal(v) ? jmDescontoPctVenda(v) : JM_DESCONTO_PADRAO_PCT;
+}
+function jmSaldoPreview(v){
+  return Math.max(0, Math.round((jmTotalPreview(v) - totalPagoFiado(v))*100)/100);
+}
 function renderJoaoMarcos(){
   const todasFiadoJM = vendas.filter(ehVendaJoaoMarcos);
   const abertas = todasFiadoJM.filter(v=>saldoDevedorFiado(v)>0.004).sort((a,b)=>(b.data_venda||'').localeCompare(a.data_venda||''));
   const quitadas = todasFiadoJM.filter(v=>saldoDevedorFiado(v)<=0.004).sort((a,b)=>(b.data_venda||'').localeCompare(a.data_venda||''));
   const itensAvista = itensJoaoMarcosAvista();
-  const totalFiado = todasFiadoJM.reduce((s,v)=>s+totalVendaFiado(v),0);
-  const saldoPendenteFiado = todasFiadoJM.reduce((s,v)=>s+saldoDevedorFiado(v),0);
+  const totalFiado = todasFiadoJM.reduce((s,v)=>s+jmTotalPreview(v),0);
+  const saldoPendenteFiado = todasFiadoJM.reduce((s,v)=>s+jmSaldoPreview(v),0);
 
   document.getElementById('jmResumoCards').innerHTML = `
     <div class="fin-card"><span class="fin-label">Saldo devedor (fiado)</span><span class="fin-value" style="color:${saldoPendenteFiado>0?'var(--rust)':'var(--sage-dark)'};">R$ ${brl(saldoPendenteFiado)}</span></div>
@@ -8586,13 +8614,16 @@ function renderJoaoMarcos(){
     <div class="fin-card"><span class="fin-label">Total de vendas</span><span class="fin-value">R$ ${brl(totalFiado)}</span></div>
   `;
 
-  // corpo com a tabela de itens (preço original x preço com o desconto real daquela venda) + totais, comum às vendas abertas e quitadas
+  // corpo com a tabela de itens (preço original x preço com desconto) + totais, comum às vendas abertas e quitadas.
+  // Em venda ABERTA (sem pagamento ainda), "com desconto"/total/saldo são uma PRÉVIA dos 10% padrão dele
+  // (jmTotalPreview/jmItemPreview/jmSaldoPreview) — só pra mostrar quanto ele vai pagar antes de pagar.
+  // Assim que tem pagamento registrado, mostra os valores reais de sempre (totalVendaFiado/valorAjustadoItem).
   const corpoVenda = (v)=>{
     const totalOriginal = jmTotalOriginalVenda(v); // soma do preço real de cada item, do jeito que foi registrado no estoque, sem nenhum desconto
-    const total = totalVendaFiado(v); // valor efetivamente registrado/devido pra essa venda (já com o desconto daquele dia embutido)
-    const descPct = jmDescontoPctVenda(v);
+    const total = jmTotalPreview(v);
+    const descPct = jmDescontoPctPreview(v);
     const pago = totalPagoFiado(v);
-    const saldo = saldoDevedorFiado(v); // saldo devedor real — já em cima do valor com desconto, porque o total da venda já é o valor com desconto
+    const saldo = jmSaldoPreview(v);
     const quitada = saldo<=0.004;
     return `
       <table class="jm-itens-table" style="width:100%; border-collapse:collapse; margin:8px 0;">
@@ -8604,7 +8635,7 @@ function renderJoaoMarcos(){
         <tbody>
           ${v.itens.map(it=>{
             const original = Number(it.quantidade)*Number(it.valor_unitario); // preço real do item no estoque, no momento da venda (sem nenhum ajuste)
-            const comDesconto = valorAjustadoItem(v, it, 'fiado'); // fatia proporcional do valor com desconto realmente registrado pra essa venda
+            const comDesconto = jmItemPreview(v, it);
             return `<tr>
               <td style="padding:4px 6px; border-bottom:1px solid var(--line);">${fmtQtd(it.quantidade)}x ${escapeHtml(nomeItemComVariante(v.id, it, 'venda_fiado_id'))}${badgeConferirPreco(it)}</td>
               <td style="padding:4px 6px; border-bottom:1px solid var(--line); text-align:right;">R$ ${brl(original)}</td>
