@@ -4502,6 +4502,7 @@ function renderVendas(){
     const valor = Number(document.getElementById('pgValor-'+vendaId).value);
     const forma = document.getElementById('pgForma-'+vendaId).value;
     if(!valor || valor<=0){ alert('Digite um valor válido.'); return; }
+    if(!forma){ alert('Selecione a forma de pagamento.'); return; }
     const saldoAtual = saldoDevedorFiado(v);
     const valorFinal = Math.min(valor, saldoAtual);
     const vaiQuitar = (saldoAtual - valorFinal) <= 0.004;
@@ -4509,10 +4510,17 @@ function renderVendas(){
       const ok = confirm('Esse pagamento quita a dívida do cliente. Já registrou essa venda no sistema oficial (nota fiscal / baixa de estoque)?\n\nClique em OK só se SIM — isso vai fechar a dívida.\nSe ainda não registrou, clique em Cancelar, registre primeiro e volte aqui depois.');
       if(!ok) return;
     }
-    const {data:novoPg, error} = await sb.from('vendas_fiado_pagamentos').insert({venda_id:vendaId, data_pagamento:data, valor:valorFinal}).select().single();
+    // A forma de pagamento vai DIRETO no insert (não é mais um 2º passo separado que depende de
+    // achar o pagamento de volta na lista em memória — isso podia falhar silenciosamente, sem
+    // nenhum erro aparecer na tela, e o pagamento ficava sem forma de pagamento gravada mesmo
+    // já tendo sido escolhida. Achado em out/2026, caso do Felipe Mariano.)
+    let taxaPct = 0;
+    if(forma==='cartao_credito') taxaPct = 3;
+    if(forma==='cartao_debito') taxaPct = 1;
+    const taxaValor = Number((valorFinal * taxaPct/100).toFixed(2));
+    const {data:novoPg, error} = await sb.from('vendas_fiado_pagamentos').insert({venda_id:vendaId, data_pagamento:data, valor:valorFinal, forma_pagamento:forma, taxa_maquina_pct:taxaPct, taxa_maquina_valor:taxaValor, classificado_em:hojeStr()}).select().single();
     if(error){ alert('Erro: '+error.message); return; }
     v.pagamentos = v.pagamentos||[]; v.pagamentos.push(novoPg);
-    await classificarPagamento(novoPg.id, forma, 'fiado'); // já classifica na hora — não precisa passar por "Conferir Pagamentos"
     if(vaiQuitar){
       await sb.from('vendas_fiado').update({status:'pago', data_pago:data}).eq('id', vendaId);
       v.status='pago'; v.data_pago=data;
@@ -6598,13 +6606,23 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
 
   const valorRecebido = Number(document.getElementById('rvValorRecebido').value) || valorBruto;
   const formaPagamentoAvista = document.getElementById('rvFormaPagamento').value;
+  // A forma de pagamento vai DIRETO no insert/update (não é mais um 2º passo separado via
+  // classificarPagamento, que dependia de achar a venda de volta na lista em memória — isso podia
+  // falhar silenciosamente, sem nenhum erro aparecer na tela, e a venda ficava sem forma de
+  // pagamento gravada mesmo já tendo sido escolhida. Mesma correção aplicada em out/2026 nos
+  // pagamentos de fiado, caso do Felipe Mariano.)
+  let taxaPctAvista = 0;
+  if(formaPagamentoAvista==='cartao_credito') taxaPctAvista = 3;
+  if(formaPagamentoAvista==='cartao_debito') taxaPctAvista = 1;
+  const taxaValorAvista = Number((valorRecebido * taxaPctAvista/100).toFixed(2));
+  const patchFormaAvista = {forma_pagamento:formaPagamentoAvista, taxa_maquina_pct:taxaPctAvista, taxa_maquina_valor:taxaValorAvista, classificado_em:hojeStr()};
   let vendaAvista;
   if(modoEdicaoVenda && modoEdicaoVenda.origem==='avista'){
-    const {data:vendaAtualizada, error} = await sb.from('vendas_avista').update({data, valor_bruto:valorBruto, valor_recebido:valorRecebido}).eq('id', modoEdicaoVenda.id).select().single();
+    const {data:vendaAtualizada, error} = await sb.from('vendas_avista').update({data, valor_bruto:valorBruto, valor_recebido:valorRecebido, ...patchFormaAvista}).eq('id', modoEdicaoVenda.id).select().single();
     if(error){ alert('Erro ao editar venda: '+error.message); return; }
     vendaAvista = vendaAtualizada;
   } else {
-    const {data:novaVenda, error} = await sb.from('vendas_avista').insert({data, cliente_nome:'', valor_bruto:valorBruto, valor_recebido:valorRecebido}).select().single();
+    const {data:novaVenda, error} = await sb.from('vendas_avista').insert({data, cliente_nome:'', valor_bruto:valorBruto, valor_recebido:valorRecebido, ...patchFormaAvista}).select().single();
     if(error){ alert('Erro ao salvar venda: '+error.message); return; }
     vendaAvista = novaVenda;
   }
@@ -6632,7 +6650,6 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
     vendasAvista.unshift({...vendaAvista, itens: itensSalvos});
   }
 
-  await classificarPagamento(vendaAvista.id, formaPagamentoAvista, 'avista'); // já classifica na hora — não precisa passar por "Conferir Pagamentos"
   updateBadges();
   atualizarVisibilidadeConferirPagamentos();
   alert(eraEdicao ? 'Venda editada com sucesso!' : 'Venda registrada! Estoque e forma de pagamento já classificados.');
@@ -8743,6 +8760,7 @@ function renderJoaoMarcos(){
     const recebidoDigitado = fertLerMoeda('jmPgRecebido-'+vendaId);
     const forma = document.getElementById('jmPgForma-'+vendaId).value;
     if(!recebidoDigitado || recebidoDigitado<=0){ alert('Digita o valor recebido.'); return; }
+    if(!forma){ alert('Selecione a forma de pagamento.'); return; }
     // o saldo devedor já é o valor real da venda (com o desconto daquele dia já embutido no registro),
     // então o valor recebido abate a dívida direto, sem nenhuma conta de desconto aqui
     const saldoAtual = saldoDevedorFiado(v);
@@ -8750,10 +8768,15 @@ function renderJoaoMarcos(){
     const recebido = brutoFinal;
     const vaiQuitar = (saldoAtual - brutoFinal) <= 0.004;
     const descPctVenda = jmDescontoPctVenda(v);
-    const {data:novoPg, error} = await sb.from('vendas_fiado_pagamentos').insert({venda_id:vendaId, data_pagamento:data, valor:brutoFinal, desconto_pct:descPctVenda, valor_recebido:recebido}).select().single();
+    // A forma de pagamento vai DIRETO no insert (ver nota na mesma correção em Vendas → fiado,
+    // feita ao mesmo tempo — evita o mesmo risco de silenciosamente não gravar a forma escolhida).
+    let taxaPct = 0;
+    if(forma==='cartao_credito') taxaPct = 3;
+    if(forma==='cartao_debito') taxaPct = 1;
+    const taxaValor = Number((brutoFinal * taxaPct/100).toFixed(2));
+    const {data:novoPg, error} = await sb.from('vendas_fiado_pagamentos').insert({venda_id:vendaId, data_pagamento:data, valor:brutoFinal, desconto_pct:descPctVenda, valor_recebido:recebido, forma_pagamento:forma, taxa_maquina_pct:taxaPct, taxa_maquina_valor:taxaValor, classificado_em:hojeStr()}).select().single();
     if(error){ alert('Erro: '+error.message); return; }
     v.pagamentos = v.pagamentos||[]; v.pagamentos.push(novoPg);
-    await classificarPagamento(novoPg.id, forma, 'fiado'); // já classifica na hora — não precisa passar por "Conferir Pagamentos"
     if(vaiQuitar){
       await sb.from('vendas_fiado').update({status:'pago', data_pago:data}).eq('id', vendaId);
       v.status='pago'; v.data_pago=data;
