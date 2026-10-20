@@ -659,7 +659,7 @@ td input.wide{width:74px;}
           </div>
           <div class="form-row hidden" id="rvValorFinalFiadoWrap" style="margin-top:10px;">
             <div><label>Valor final da dívida <span class="qv-label">(normalmente já vem certo — só mexe pra arredondamento)</span></label><input type="number" id="rvValorFinalFiado" min="0" step="0.01"></div>
-            <div></div>
+            <div><label>Previsão de recebimento <span class="qv-label">(nota livre, opcional)</span></label><input type="text" id="rvPrevisaoRecebimento" placeholder='Ex: "Dia 21/10 50% e dia 30/10 mais 50%"'></div>
           </div>
           <button class="save-venda-btn" id="salvarVendaAvista">Registrar venda</button>
         </div>
@@ -4455,6 +4455,7 @@ function renderVendas(){
         const saldo = saldoDevedorFiado(v);
         return `<div class="sub-venda">
           <div class="sub-venda-info">Comprado em: ${formatDate(v.data_venda)}</div>
+          <div class="sub-venda-info" style="color:var(--muted); font-style:italic;">📅 Previsão de recebimento: ${v.previsao_recebimento ? escapeHtml(v.previsao_recebimento) : 'Não definido'}</div>
           <div class="itens-list">${v.itens.map(it=>`<div class="item-row"><span>${fmtQtd(it.quantidade)}x ${escapeHtml(nomeItemComVariante(v.id, it, 'venda_fiado_id'))}${badgeConferirPreco(it)}</span><span>R$ ${brl(valorAjustadoItem(v, it, 'fiado'))}</span></div>`).join('')}</div>
           <div class="pagto-summary">
             <span>Total: <b>R$ ${brl(total)}</b></span>
@@ -5942,9 +5943,6 @@ function renderBoletos(){
       <span class="fin-label">A pagar nesse ciclo <span class="qv-label">(${cicloExtenso} — ${doCicloAtual.length} boleto${doCicloAtual.length!==1?'s':''})</span></span>
       <span class="fin-value" style="color:var(--rust);">R$ ${brl(totalCicloAtual)}</span>
     </div>
-    <div style="margin-top:8px; font-size:13px;">
-      ${doCicloAtual.map(b=>`<div class="resumo-linha"><span>${escapeHtml(b.descricao)} <span class="qv-label">(vence ${formatDate(b.vencimento)})</span></span><span>R$ ${brl(saldoDevedorBoleto(b))}</span></div>`).join('')}
-    </div>
   `;
 
   document.getElementById('boletosAbertosList').innerHTML = abertos.length===0 ? '<p class="empty-state">Nenhum boleto em aberto.</p>' :
@@ -6013,13 +6011,13 @@ function renderBoletos(){
       <span class="fin-value" style="color:var(--sage-dark);">R$ ${brl(totalQuitados)}</span>
     </div>
     <table>
-      <thead><tr><th>Descrição</th><th>Lançado</th><th>Quitado</th><th>Responsável</th><th style="text-align:right;">Valor</th></tr></thead>
+      <thead><tr><th>Descrição</th><th>Vencimento</th><th>Quitado</th><th>Responsável</th><th style="text-align:right;">Valor</th></tr></thead>
       <tbody>
         ${quitados.map(b=>{
           const ultimoPg = dataUltimoPagamento(b);
           return `<tr>
             <td class="produto-cell">${escapeHtml(b.descricao)}</td>
-            <td>${formatDate(b.data_lancamento)}</td>
+            <td>${b.vencimento?formatDate(b.vencimento):'—'}</td>
             <td>${ultimoPg?formatDate(ultimoPg):'—'}</td>
             <td>${escapeHtml(b.responsavel||'Empresa')}</td>
             <td style="text-align:right; font-weight:700;">R$ ${brl(totalBoleto(b))}</td>
@@ -6236,6 +6234,7 @@ function abrirRegistrarVenda(){
   document.getElementById('rvValorRecebido').dataset.tocado = '';
   document.getElementById('rvValorFinalFiado').value = '';
   document.getElementById('rvValorFinalFiado').dataset.tocado = '';
+  document.getElementById('rvPrevisaoRecebimento').value = '';
   marcarFormaPagamentoAtiva('dinheiro');
   const dl = document.getElementById('produtosDatalistVenda');
   const comEstoque = produtos.filter(p=> lotes.some(l=>l.produto_id===p.id && saldo(l)>0));
@@ -6289,6 +6288,7 @@ async function editarVenda(id, origem){
     document.getElementById('rvTelefone').value = venda.cliente_telefone||'';
     document.getElementById('rvValorFinalFiado').value = totalVendaFiado(venda);
     document.getElementById('rvValorFinalFiado').dataset.tocado = '1';
+    document.getElementById('rvPrevisaoRecebimento').value = venda.previsao_recebimento || '';
   } else {
     document.getElementById('rvEhFiado').checked = false;
     document.getElementById('rvClienteWrap').classList.add('hidden');
@@ -6559,17 +6559,18 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
     if(!cliente){ alert('Pra venda fiado, o nome do cliente é obrigatório.'); return; }
     const telefone = document.getElementById('rvTelefone').value.trim();
     const valorFinalFiado = Number(document.getElementById('rvValorFinalFiado').value) || valorBruto;
+    const previsaoRecebimento = document.getElementById('rvPrevisaoRecebimento').value.trim() || null;
 
     let vendaFiado;
     if(modoEdicaoVenda && modoEdicaoVenda.origem==='fiado'){
       const {data:vendaAtualizada, error} = await sb.from('vendas_fiado').update({
-        cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, valor_final: valorFinalFiado
+        cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, valor_final: valorFinalFiado, previsao_recebimento: previsaoRecebimento
       }).eq('id', modoEdicaoVenda.id).select().single();
       if(error){ alert('Erro ao editar venda fiado: '+error.message); return; }
       vendaFiado = vendaAtualizada;
     } else {
       const {data:novaVenda, error} = await sb.from('vendas_fiado').insert({
-        cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, status:'aberto', valor_final: valorFinalFiado
+        cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, status:'aberto', valor_final: valorFinalFiado, previsao_recebimento: previsaoRecebimento
       }).select().single();
       if(error){ alert('Erro ao salvar venda fiado: '+error.message); return; }
       vendaFiado = novaVenda;
@@ -6769,16 +6770,13 @@ function renderConferirPagamentos(){
         <div class="venda-info">${info}</div>
         ${itens}
         <div class="venda-actions" style="flex-wrap:wrap; gap:8px;">
-          <button class="mini-btn" ${idAttr} data-forma="dinheiro">💵 Dinheiro</button>
-          <button class="mini-btn" ${idAttr} data-forma="pix">📱 PIX</button>
-          <button class="mini-btn" ${idAttr} data-forma="cartao_credito">💳 Cartão Crédito</button>
-          <button class="mini-btn" ${idAttr} data-forma="cartao_debito">💳 Cartão Débito</button>
+          ${FORMAS_PAGAMENTO.map(f=>`<button class="mini-btn" ${idAttr} data-forma="${f.valor}">${f.label}</button>`).join('')}
           ${v._origem==='avista'?`<button class="mini-btn" data-editarvenda="${v.id}" data-origemedicao="avista">✎ editar venda</button><button class="mini-btn" data-excluiravista="${v.id}" style="color:var(--rust);">🗑 excluir venda</button>`:''}
         </div>
       </div>`;
     }).join('');
 
-  const formaLabel = {dinheiro:'💵 Dinheiro', pix:'📱 PIX', cartao_credito:'💳 Crédito', cartao_debito:'💳 Débito'};
+  const formaLabel = Object.fromEntries(FORMAS_PAGAMENTO.map(f=>[f.valor, f.label]));
   document.getElementById('classificadasList').innerHTML = classificadas.length===0 ? '<p class="empty-state">Nenhuma venda classificada hoje ainda.</p>' :
     classificadas.map((v,i)=>{
       const idAttr = v._origem==='avista' ? `data-classificar="${v.id}" data-origem="avista"` : `data-classificar="${v.id}" data-origem="fiado"`;
@@ -6795,10 +6793,7 @@ function renderConferirPagamentos(){
         <span style="display:flex; align-items:center; gap:10px;"><b>R$ ${brl(v.valor_recebido)}</b><button class="mini-btn" data-editarclassif="${rowId}">✎ editar</button></span>`}
       </div>
       <div class="venda-actions hidden" id="${rowId}-edit" style="flex-wrap:wrap; gap:8px; margin:-4px 0 10px;">
-        <button class="mini-btn" ${idAttr} data-forma="dinheiro">💵 Dinheiro</button>
-        <button class="mini-btn" ${idAttr} data-forma="pix">📱 PIX</button>
-        <button class="mini-btn" ${idAttr} data-forma="cartao_credito">💳 Cartão Crédito</button>
-        <button class="mini-btn" ${idAttr} data-forma="cartao_debito">💳 Cartão Débito</button>
+        ${FORMAS_PAGAMENTO.map(f=>`<button class="mini-btn" ${idAttr} data-forma="${f.valor}">${f.label}</button>`).join('')}
         <button class="mini-btn" data-cancelarclassif="${rowId}">cancelar</button>
         ${v._origem==='avista'?`<button class="mini-btn" data-editarvenda="${v.id}" data-origemedicao="avista">✎ editar venda</button><button class="mini-btn" data-excluiravista="${v.id}" style="color:var(--rust);">🗑 excluir venda</button>`:''}
       </div>`;
@@ -7260,10 +7255,7 @@ function renderRelatorioDia(data){
       <div class="itens-list">${v.itens.map(it=>`<div class="item-row"><span>${fmtQtd(it.quantidade)}x ${escapeHtml(nomeItemComVariante(v.id, it, campoMov))}${badgeConferirPreco(it)}</span><span>R$ ${brl(valorAjustadoItem(v, it, origem))}</span></div>`).join('')}</div>
       <div class="venda-actions" style="flex-wrap:wrap; gap:8px; margin-top:8px;">
         ${origem==='avista' ? `
-          <button class="mini-btn" ${idAttr} data-forma="dinheiro">💵 Dinheiro</button>
-          <button class="mini-btn" ${idAttr} data-forma="pix">📱 PIX</button>
-          <button class="mini-btn" ${idAttr} data-forma="cartao_credito">💳 Cartão Crédito</button>
-          <button class="mini-btn" ${idAttr} data-forma="cartao_debito">💳 Cartão Débito</button>
+          ${FORMAS_PAGAMENTO.map(f=>`<button class="mini-btn" ${idAttr} data-forma="${f.valor}">${f.label}</button>`).join('')}
           <button class="mini-btn" data-editarvenda="${v.id}" data-origemedicao="avista">✎ editar venda</button>
           <button class="mini-btn" data-excluiravista="${v.id}" style="color:var(--rust);">🗑 excluir venda</button>
         ` : `
