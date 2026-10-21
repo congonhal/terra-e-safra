@@ -341,13 +341,14 @@ td input.wide{width:74px;}
 .cliente-fiado-desc{font-size:12px; color:#5C4E36; margin-top:2px;}
 .cliente-fiado-selo{font-size:20px;}
 .alerta-icon{margin-left:6px; cursor:help;}
-.grupo-venda-card{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--sage); border-radius:2px; padding:14px 18px; margin-bottom:10px;}
-.grupo-venda-card.tem-atraso{border-left-color:var(--rust);}
+.grupo-venda-card{background:var(--card); border:2px solid var(--sage); border-left:4px solid var(--sage); border-radius:4px; padding:14px 18px; margin-bottom:14px; max-width:720px;}
+.grupo-venda-card.tem-atraso{border-color:var(--rust); border-left-color:var(--rust);}
 .grupo-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;}
 .grupo-nome{font-family:'Poppins',sans-serif; font-weight:700; font-size:16px; color:var(--bark);}
 .grupo-total{font-family:'Poppins',sans-serif; font-weight:600;}
 .grupo-sub{font-size:11.5px; color:#5C4E36; margin-bottom:10px;}
-.sub-venda{border-top:1px dashed var(--line); padding-top:8px; margin-top:8px;}
+.sub-venda{border-top:3px solid var(--line); padding-top:10px; margin-top:10px;}
+.sub-venda:first-child{border-top:none; padding-top:0; margin-top:0;}
 .sub-venda-info{font-size:11.5px; color:#5C4E36; margin-bottom:6px;}
 .pagto-summary{display:flex; gap:18px; flex-wrap:wrap; font-size:12.5px; color:var(--ink); margin:8px 0; background:#F2E8D3; border:1px solid var(--line); border-radius:2px; padding:8px 12px;}
 .pagto-historico{margin:6px 0; font-size:12px;}
@@ -4460,11 +4461,9 @@ function renderVendas(){
     const saldoGrupo = grupo.reduce((s,v)=> s + saldoDevedorFiado(v), 0);
     return `<div class="grupo-venda-card ${corCliente!=='verde'?'tem-atraso':''}">
       <div class="grupo-top"><span class="grupo-nome">${escapeHtml(nome)} ${clienteAlertaIcon(nome)}</span>
-        <span style="text-align:right;">
-          <span style="display:block; font-size:10.5px; font-weight:600; color:#5C4E36; text-transform:uppercase; letter-spacing:.3px;">Total compra</span>
-          <span class="grupo-total">R$ ${brl(totalGrupo)}</span>
-          <span style="display:block; font-size:10.5px; font-weight:600; color:var(--rust); text-transform:uppercase; letter-spacing:.3px; margin-top:4px;">Saldo devedor</span>
-          <span class="grupo-total" style="color:var(--rust);">R$ ${brl(saldoGrupo)}</span>
+        <span style="text-align:right; font-size:13px;">
+          <span style="display:block;">Total: <b>R$ ${brl(totalGrupo)}</b></span>
+          <span style="display:block; color:var(--rust); margin-top:2px;">Saldo devedor: <b>R$ ${brl(saldoGrupo)}</b></span>
         </span>
       </div>
       <div class="grupo-sub">${grupo[0].cliente_telefone?escapeHtml(grupo[0].cliente_telefone)+' · ':''}${(()=>{
