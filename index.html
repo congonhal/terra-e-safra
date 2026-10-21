@@ -2061,9 +2061,15 @@ function escolherLoteMaisRecenteCadastrado(grupoLotes){
 // farelo, comprado/contado em saco mas também vendido a granel no dispenser) sempre em saco;
 // os demais casos usam a própria unidade do grupo (que já é a unidade que a pessoa conta).
 function unidadeConferenciaGrupo(a){
+  // ATENÇÃO (out/2026): antes, fertilizante em modo "kg" sempre pedia a contagem em TONELADA,
+  // mesmo quando o lote já tem peso_por_saco cadastrado (que é como a loja conta/vende na
+  // prática hoje, em saco). Isso causava erro de digitação gigante — alguém contava em sacos,
+  // mas o campo multiplicava por 1000 (tonelada) em vez de pelo peso do saco, inflando ou
+  // zerando o estoque sem ninguém perceber. Agora, sempre que o grupo tem peso_por_saco, pede em
+  // SACO primeiro — só cai pra tonelada se for fertilizante a granel puro, sem saco cadastrado.
+  if(a.pesoSacoRef && Number(a.pesoSacoRef)>0) return {label:'saco', labelPlural:'sacos', fator:Number(a.pesoSacoRef)};
   const fert = a.produto && ehFertilizante(a.produto.tipo) && a.unidade==='kg';
   if(fert) return {label:'tonelada', labelPlural:'toneladas', fator:1000};
-  if(a.pesoSacoRef && Number(a.pesoSacoRef)>0) return {label:'saco', labelPlural:'sacos', fator:Number(a.pesoSacoRef)};
   const un = a.unidade||'un';
   return {label:un, labelPlural:un, fator:1};
 }
@@ -4428,12 +4434,17 @@ function renderVendas(){
   const totalAReceber = base.reduce((s,v)=>s+saldoDevedorFiado(v),0);
   document.getElementById('vendasTotalAReceber').textContent = 'R$ '+brl(totalAReceber);
 
-  // agrupa por cliente + dia da venda
+  // agrupa só por cliente — todas as compras em aberto dele (de qualquer data) entram no mesmo
+  // quadro, cada uma mostrada separada (data, itens, pagamentos) dentro dele, com um total e um
+  // saldo devedor somando tudo. Antes agrupava por cliente+data, e isso espalhava as compras do
+  // mesmo cliente em cartões soltos, longe um do outro na lista — dificultava ver quanto ele
+  // devia no total.
   const grupos = {};
   base.forEach(v=>{
-    const key = v.cliente_nome+'|'+v.data_venda;
+    const key = v.cliente_nome;
     (grupos[key] = grupos[key]||[]).push(v);
   });
+  Object.values(grupos).forEach(g=> g.sort((a,b)=> (b.data_venda||'').localeCompare(a.data_venda||'')));
   const chaves = Object.keys(grupos).sort((a,b)=>{
     const va = grupos[a][0], vb = grupos[b][0];
     return (vb.data_venda||'').localeCompare(va.data_venda||'');
@@ -4446,9 +4457,22 @@ function renderVendas(){
     const nome = grupo[0].cliente_nome;
     const corCliente = statusClienteCor(nome);
     const totalGrupo = grupo.reduce((s,v)=> s + totalVendaFiado(v), 0);
+    const saldoGrupo = grupo.reduce((s,v)=> s + saldoDevedorFiado(v), 0);
     return `<div class="grupo-venda-card ${corCliente!=='verde'?'tem-atraso':''}">
-      <div class="grupo-top"><span class="grupo-nome">${escapeHtml(nome)} ${clienteAlertaIcon(nome)}</span><span class="grupo-total">R$ ${brl(totalGrupo)}</span></div>
-      <div class="grupo-sub">${grupo[0].cliente_telefone?escapeHtml(grupo[0].cliente_telefone)+' · ':''}Compra${grupo.length>1?'s':''} em ${formatDate(grupo[0].data_venda)}${grupo.length>1?` (${grupo.length} lançamentos)`:''}</div>
+      <div class="grupo-top"><span class="grupo-nome">${escapeHtml(nome)} ${clienteAlertaIcon(nome)}</span>
+        <span style="text-align:right;">
+          <span style="display:block; font-size:10.5px; font-weight:600; color:#5C4E36; text-transform:uppercase; letter-spacing:.3px;">Total compra</span>
+          <span class="grupo-total">R$ ${brl(totalGrupo)}</span>
+          <span style="display:block; font-size:10.5px; font-weight:600; color:var(--rust); text-transform:uppercase; letter-spacing:.3px; margin-top:4px;">Saldo devedor</span>
+          <span class="grupo-total" style="color:var(--rust);">R$ ${brl(saldoGrupo)}</span>
+        </span>
+      </div>
+      <div class="grupo-sub">${grupo[0].cliente_telefone?escapeHtml(grupo[0].cliente_telefone)+' · ':''}${(()=>{
+        const datasUnicas = Array.from(new Set(grupo.map(v=>v.data_venda)));
+        if(datasUnicas.length===1) return `Compra${grupo.length>1?'s':''} em ${formatDate(datasUnicas[0])}${grupo.length>1?` (${grupo.length} lançamentos)`:''}`;
+        const datasOrdenadas = datasUnicas.slice().sort();
+        return `${grupo.length} compras em aberto · de ${formatDate(datasOrdenadas[0])} até ${formatDate(datasOrdenadas[datasOrdenadas.length-1])}`;
+      })()}</div>
       ${grupo.map(v=>{
         const total = totalVendaFiado(v);
         const pago = totalPagoFiado(v);
