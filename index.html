@@ -8697,6 +8697,7 @@ function renderJoaoMarcos(){
       <div class="venda-actions">
         <button class="mini-btn" data-jmregistrarpg="${v.id}">+ registrar pagamento</button>
         <button class="mini-btn" data-editarvenda="${v.id}" data-origemedicao="fiado">✎ editar venda</button>
+        <button class="mini-btn" data-jmdelvenda="${v.id}" style="color:var(--rust);">🗑 excluir venda</button>
       </div>
       <div class="pagto-form hidden" id="jmPgForm-${v.id}">
         <div class="field-row3">
@@ -8754,6 +8755,9 @@ function renderJoaoMarcos(){
   }));
   fiadoListEl.querySelectorAll('[data-editarvenda]').forEach(btn=>{
     btn.addEventListener('click', ()=> editarVenda(btn.dataset.editarvenda, btn.dataset.origemedicao));
+  });
+  fiadoListEl.querySelectorAll('[data-jmdelvenda]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{ await excluirVendaFiado(btn.dataset.jmdelvenda); renderJoaoMarcos(); updateBadges(); });
   });
   fiadoListEl.querySelectorAll('[data-jmregistrarpg]').forEach(b=>b.addEventListener('click', ()=>{
     const id = b.dataset.jmregistrarpg;
