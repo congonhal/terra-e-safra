@@ -8780,6 +8780,20 @@ function renderJoaoMarcos(){
     const forma = document.getElementById('jmPgForma-'+vendaId).value;
     if(!recebidoDigitado || recebidoDigitado<=0){ alert('Digita o valor recebido.'); return; }
     if(!forma){ alert('Selecione a forma de pagamento.'); return; }
+    // Se é o 1º pagamento real dessa venda, "oficializa" agora o desconto padrão do João Marcos:
+    // grava o valor já com desconto em valor_final, que passa a valer daqui pra frente (saldo
+    // devedor, histórico, relatórios). Antes disso não existia — a tela mostrava pro usuário o
+    // valor JÁ com desconto (jmTotalPreview), mas o saldo real seguia calculado em cima do valor
+    // CHEIO (sem desconto), porque nada nunca gravava o desconto no banco. Resultado: pagando
+    // certinho o valor com desconto mostrado na tela, sobrava um saldo devedor residual mesmo a
+    // venda devendo estar quitada (achado em out/2026, caso de uma venda de R$80 com 10% de
+    // desconto → R$72, onde pagar os R$72 certinhos deixava R$8 "devendo").
+    if(!jmTemPagamentoReal(v)){
+      const valorComDesconto = jmTotalPreview(v);
+      const {error: errDesc} = await sb.from('vendas_fiado').update({valor_final:valorComDesconto}).eq('id', vendaId);
+      if(errDesc){ alert('Erro ao aplicar o desconto: '+errDesc.message); return; }
+      v.valor_final = valorComDesconto;
+    }
     // o saldo devedor já é o valor real da venda (com o desconto daquele dia já embutido no registro),
     // então o valor recebido abate a dívida direto, sem nenhuma conta de desconto aqui
     const saldoAtual = saldoDevedorFiado(v);
