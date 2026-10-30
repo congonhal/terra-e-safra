@@ -1525,14 +1525,14 @@ async function showApp(){
   iniciarTimerInatividade();
 }
 // ---- bloqueio automático por inatividade: some tempo sem uso, desloga sozinho e volta pro login normal ----
-const INATIVIDADE_LIMITE_MS = 5*60*1000; // 5 minutos
+const INATIVIDADE_LIMITE_MS = 10*60*1000; // 10 minutos
 let inatividadeTimer = null;
 function resetInatividadeTimer(){
   clearTimeout(inatividadeTimer);
   inatividadeTimer = setTimeout(async ()=>{
     await sb.auth.signOut();
     showLogin();
-    document.getElementById('loginError').textContent = 'Sessão encerrada por inatividade (5 minutos sem uso). Faz login de novo pra continuar.';
+    document.getElementById('loginError').textContent = 'Sessão expirada devido a 10 minutos sem atividade. Atualize a página e faça login novamente.';
     document.getElementById('loginError').classList.remove('hidden');
   }, INATIVIDADE_LIMITE_MS);
 }
@@ -1543,6 +1543,16 @@ function iniciarTimerInatividade(){
 function pararTimerInatividade(){
   clearTimeout(inatividadeTimer);
   ['click','keydown','mousedown','touchstart','scroll'].forEach(evt=> document.removeEventListener(evt, resetInatividadeTimer));
+}
+// Traduz um erro de salvamento do Supabase pra uma mensagem que a pessoa entenda. O caso mais comum
+// (código 42501 / "row-level security policy") é a sessão ter expirado sem a pessoa perceber — o
+// formulário continua na tela normalmente, mas o salvamento é recusado porque não tem mais login
+// válido por trás. Antes isso aparecia como um erro técnico em inglês, sem explicar o que fazer.
+function mensagemErroSalvar(error){
+  if(error && (error.code==='42501' || /row-level security/i.test(error.message||''))){
+    return 'Sua sessão expirou (tempo parado sem uso). Atualize a página e faça login novamente — nada foi salvo, é só repetir o lançamento depois de entrar de novo.';
+  }
+  return (error && error.message) || 'erro desconhecido';
 }
 document.getElementById('loginBtn').onclick = async ()=>{
   const email=document.getElementById('loginEmail').value.trim();
@@ -6539,7 +6549,7 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
       if(l){
         const novaQtd = Math.max(0, Number(l.qtd_vendida||0) - Number(m.quantidade||0));
         const {error} = await sb.from('lotes').update({qtd_vendida:novaQtd}).eq('id', l.id);
-        if(error){ alert('Erro ao devolver estoque antigo: '+error.message); return; }
+        if(error){ alert('Erro ao devolver estoque antigo: '+mensagemErroSalvar(error)); return; }
         l.qtd_vendida = novaQtd;
       }
     }
@@ -6589,13 +6599,13 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
       const {data:vendaAtualizada, error} = await sb.from('vendas_fiado').update({
         cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, valor_final: valorFinalFiado, previsao_recebimento: previsaoRecebimento
       }).eq('id', modoEdicaoVenda.id).select().single();
-      if(error){ alert('Erro ao editar venda fiado: '+error.message); return; }
+      if(error){ alert('Erro ao editar venda fiado: '+mensagemErroSalvar(error)); return; }
       vendaFiado = vendaAtualizada;
     } else {
       const {data:novaVenda, error} = await sb.from('vendas_fiado').insert({
         cliente_nome: cliente, cliente_telefone: telefone, data_venda: data, status:'aberto', valor_final: valorFinalFiado, previsao_recebimento: previsaoRecebimento
       }).select().single();
-      if(error){ alert('Erro ao salvar venda fiado: '+error.message); return; }
+      if(error){ alert('Erro ao salvar venda fiado: '+mensagemErroSalvar(error)); return; }
       vendaFiado = novaVenda;
     }
     // produto_id/variante gravados direto, a partir de hoje — assim o relatório nunca mais precisa
@@ -6603,7 +6613,7 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
     // Vendas antigas não têm essas colunas preenchidas e continuam usando a busca por nome de sempre.
     const itensPayload = rvItensAtual.map(it=>({venda_id:vendaFiado.id, produto_nome:it.nome, quantidade:it.qtd, valor_unitario:it.valor, eh_joao_marcos:!!it.ehJoaoMarcos, produto_id:it.produtoId||null, variante:(it.variante!==undefined&&it.variante!==null)?it.variante:null, preco_conferir:!!it.precoConferir}));
     const {data:itensData, error:itensErr} = await sb.from('vendas_fiado_itens').insert(itensPayload).select();
-    if(itensErr){ alert('Erro ao salvar itens: '+itensErr.message); return; }
+    if(itensErr){ alert('Erro ao salvar itens: '+mensagemErroSalvar(itensErr)); return; }
 
     for(let i=0;i<rvItensAtual.length;i++){
       const it = rvItensAtual[i];
@@ -6643,11 +6653,11 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
   let vendaAvista;
   if(modoEdicaoVenda && modoEdicaoVenda.origem==='avista'){
     const {data:vendaAtualizada, error} = await sb.from('vendas_avista').update({data, valor_bruto:valorBruto, valor_recebido:valorRecebido, ...patchFormaAvista}).eq('id', modoEdicaoVenda.id).select().single();
-    if(error){ alert('Erro ao editar venda: '+error.message); return; }
+    if(error){ alert('Erro ao editar venda: '+mensagemErroSalvar(error)); return; }
     vendaAvista = vendaAtualizada;
   } else {
     const {data:novaVenda, error} = await sb.from('vendas_avista').insert({data, cliente_nome:'', valor_bruto:valorBruto, valor_recebido:valorRecebido, ...patchFormaAvista}).select().single();
-    if(error){ alert('Erro ao salvar venda: '+error.message); return; }
+    if(error){ alert('Erro ao salvar venda: '+mensagemErroSalvar(error)); return; }
     vendaAvista = novaVenda;
   }
 
@@ -6656,7 +6666,7 @@ document.getElementById('salvarVendaAvista').onclick = async ()=>{
   // Vendas antigas não têm essas colunas preenchidas e continuam usando a busca por nome de sempre.
   const itensParaSalvar = rvItensAtual.map(it=>({venda_id:vendaAvista.id, produto_nome:it.nome, quantidade:it.qtd, valor_unitario:it.valor, eh_joao_marcos:!!it.ehJoaoMarcos, produto_id:it.produtoId||null, variante:(it.variante!==undefined&&it.variante!==null)?it.variante:null, preco_conferir:!!it.precoConferir}));
   const {data:itensSalvos, error:errItens} = await sb.from('vendas_avista_itens').insert(itensParaSalvar).select();
-  if(errItens){ alert('Erro ao salvar itens: '+errItens.message); return; }
+  if(errItens){ alert('Erro ao salvar itens: '+mensagemErroSalvar(errItens)); return; }
 
   for(let i=0;i<rvItensAtual.length;i++){
     const it = rvItensAtual[i];
