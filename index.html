@@ -5347,7 +5347,7 @@ function renderLivroCaixa(){
   if(!livroCaixaCorte){ container.innerHTML = '<p class="empty-state">Carregando…</p>'; return; }
   const corte = livroCaixaCorte;
   const aberturaValor = calcularSaldoAberturaValor(corte);
-  const formaLabel = {dinheiro:'💵 Dinheiro', pix:'📱 PIX', cartao_credito:'💳 Crédito', cartao_debito:'💳 Débito'};
+  const formaLabel = Object.fromEntries(FORMAS_PAGAMENTO.map(f=>[f.valor, f.label]));
   const cicloAtual = periodoFechamento(hojeStr());
   const taxaCicloAtualValor = taxaMaquininhaCiclo(cicloAtual.inicio, cicloAtual.fim);
   const linhas = linhasLivroCaixa(corte);
@@ -6022,10 +6022,7 @@ function renderBoletos(){
           </select>
           <select id="bpForma-${b.id}">
             <option value="">Forma de pagamento</option>
-            <option value="dinheiro">💵 Dinheiro</option>
-            <option value="pix">📱 PIX</option>
-            <option value="cartao_credito">💳 Cartão crédito</option>
-            <option value="cartao_debito">💳 Cartão débito</option>
+            ${FORMAS_PAGAMENTO.map(f=>`<option value="${f.valor}">${f.label}</option>`).join('')}
           </select>
           <button class="save-btn" data-confirmarpgboleto="${b.id}">confirmar</button>
           <button class="mini-btn" data-cancelarpg="${b.id}">✕</button>
