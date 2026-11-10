@@ -1234,6 +1234,36 @@ td input.wide{width:74px;}
   </div>
 </div>
 
+<div class="overlay" id="exportEstoqueOverlay">
+  <div class="panel-box" style="max-width:480px;">
+    <div class="panel-head">
+      <div><h2 class="panel-title">📤 Exportar Estoque</h2></div>
+      <button class="close-btn" id="exportEstoqueCloseBtn">✕</button>
+    </div>
+    <div class="panel-body">
+      <div class="field">
+        <label style="font-size:13px;">Categoria</label>
+        <select id="exportEstoqueCat" style="font-size:15px; padding:8px; width:100%; box-sizing:border-box;"></select>
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label style="font-size:13px;">O que exportar</label>
+        <label class="checkbox-inline" style="display:block; margin-top:6px;">
+          <input type="radio" name="exportEstoqueModo" value="completo" checked>
+          <span><b>Completo</b> — lote, fornecedor, preço de compra e de venda, lucro etc. (como já era)</span>
+        </label>
+        <label class="checkbox-inline" style="display:block; margin-top:8px;">
+          <input type="radio" name="exportEstoqueModo" value="simples">
+          <span><b>Simples</b> — só produto, variante, quantidade em saldo, unidade e validade (quando tiver). Só itens com saldo.</span>
+        </label>
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="mini-btn" id="exportEstoqueCancelBtn">cancelar</button>
+      <button class="save-btn" id="exportEstoqueConfirmBtn">📤 Exportar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 console.log('%cTerra Safra — versão carregada: 2026-09-24-05', 'font-weight:bold; color:#5C4E36;');
 const SUPABASE_URL = "https://zpqvyexitrdllujoehvp.supabase.co";
@@ -4619,6 +4649,7 @@ const EXCEL_COR_CABECALHO_BORDA = 'FF2C4D15'; // --sage-dark
 const EXCEL_COR_CABECALHO_TXT = 'FFFFFFFF';
 const EXCEL_COR_ZEBRA = 'FFF4EFE0'; // tom claro dourado, combina com --gold
 const EXCEL_COR_BORDA = 'FFD8CFA8';
+const EXCEL_FONTE = 'Calibri Light'; // fonte fixa em toda exportação pra Excel do app
 
 function excelColWidth(header, rows, key){
   let max = String(header).length;
@@ -4628,7 +4659,7 @@ function excelColWidth(header, rows, key){
 function excelEstilarCabecalho(row){
   row.eachCell(cell=>{
     cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:EXCEL_COR_CABECALHO}};
-    cell.font = {bold:true, color:{argb:EXCEL_COR_CABECALHO_TXT}, size:11};
+    cell.font = {name:EXCEL_FONTE, bold:true, color:{argb:EXCEL_COR_CABECALHO_TXT}, size:11};
     cell.alignment = {vertical:'middle', horizontal:'center', wrapText:true};
     cell.border = {top:{style:'thin', color:{argb:EXCEL_COR_CABECALHO_BORDA}}, bottom:{style:'medium', color:{argb:EXCEL_COR_CABECALHO_BORDA}}};
   });
@@ -4637,6 +4668,7 @@ function excelEstilarCabecalho(row){
 function excelEstilarLinhaDados(row, headers, idxLinha){
   row.eachCell((cell, colNumber)=>{
     const h = headers[colNumber-1] || '';
+    cell.font = {name:EXCEL_FONTE};
     if(/\(R\$\)/.test(h)) cell.numFmt = '#,##0.00';
     else if(/%/.test(h) && !/situa/i.test(h)) cell.numFmt = '0.0';
     if(/\(R\$\)/.test(h) || /%/.test(h) || /^Qtd|^Quantidade/i.test(h)) cell.alignment = {horizontal:'right'};
@@ -4650,7 +4682,7 @@ function excelAdicionarTabela(ws, rows, linhaInicial){
   if(!rows || rows.length===0){
     const r = ws.getRow(linhaInicial);
     r.getCell(1).value = 'Nenhum dado nesse período';
-    r.getCell(1).font = {italic:true, color:{argb:'FF74451B'}};
+    r.getCell(1).font = {name:EXCEL_FONTE, italic:true, color:{argb:'FF74451B'}};
     return linhaInicial+1;
   }
   const headers = Object.keys(rows[0]);
@@ -4684,9 +4716,67 @@ async function excelBaixar(wb, filename){
   setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-document.getElementById('exportEstoqueBtn').onclick = async ()=>{
-  const ls = lotesFiltrados();
+function lotesPorCategoriaExport(catSel){
+  return lotes.filter(l=>{
+    const p = produtos.find(pr=>pr.id===l.produto_id);
+    if(!p) return false;
+    return !catSel || categoriaLabel(p.tipo)===catSel;
+  }).sort((a,b)=>{
+    const pa = produtos.find(pr=>pr.id===a.produto_id);
+    const pb = produtos.find(pr=>pr.id===b.produto_id);
+    const nomeA = pa ? pa.name : '';
+    const nomeB = pb ? pb.name : '';
+    return nomeA.localeCompare(nomeB, 'pt-BR') || (a.variante||'').localeCompare(b.variante||'', 'pt-BR');
+  });
+}
+function abrirExportEstoqueModal(){
+  const sel = document.getElementById('exportEstoqueCat');
+  const cats = categoriasPresentes();
+  sel.innerHTML = `<option value="">Todas as categorias</option>` + cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  document.querySelector('input[name="exportEstoqueModo"][value="completo"]').checked = true;
+  document.getElementById('exportEstoqueOverlay').classList.add('show');
+}
+document.getElementById('exportEstoqueBtn').onclick = abrirExportEstoqueModal;
+document.getElementById('exportEstoqueCloseBtn').onclick = ()=> document.getElementById('exportEstoqueOverlay').classList.remove('show');
+document.getElementById('exportEstoqueCancelBtn').onclick = ()=> document.getElementById('exportEstoqueOverlay').classList.remove('show');
+
+document.getElementById('exportEstoqueConfirmBtn').onclick = async ()=>{
+  const catSel = document.getElementById('exportEstoqueCat').value;
+  const modo = document.querySelector('input[name="exportEstoqueModo"]:checked').value;
+  const ls = lotesPorCategoriaExport(catSel);
   if(ls.length===0){ alert('Não há nada pra exportar nessa seleção.'); return; }
+  document.getElementById('exportEstoqueOverlay').classList.remove('show');
+
+  if(modo==='simples'){
+    const lsComSaldo = ls.filter(l=>saldo(l)>0.001);
+    if(lsComSaldo.length===0){ alert('Não há nada com saldo nessa seleção.'); return; }
+    const linhas = lsComSaldo.map(l=>{
+      const p = produtos.find(pr=>pr.id===l.produto_id);
+      const s = saldo(l);
+      let qtdStr, unidStr;
+      if(l.peso_por_saco && Number(l.peso_por_saco)>0){
+        const pesoSaco = Number(l.peso_por_saco);
+        qtdStr = formatarNumeroSacos(s/pesoSaco);
+        unidStr = `saco(s) de ${fmtQtd(pesoSaco)}kg (~${fmtQtd(s)} kg)`;
+      } else {
+        qtdStr = fmtQtd(s);
+        unidStr = l.observacao||'un';
+      }
+      return {
+        'Produto': p ? p.name : '—',
+        'Variante/Tamanho': l.variante||'',
+        'Quantidade em saldo': qtdStr,
+        'Unidade': unidStr,
+        'Validade': l.data_validade ? formatDate(l.data_validade) : ''
+      };
+    });
+    const wb = new ExcelJS.Workbook();
+    excelNovaAba(wb, 'Estoque (simples)', linhas);
+    await excelBaixar(wb, `estoque-simples-terra-e-safra-${hojeStr()}.xlsx`);
+    return;
+  }
+
+  // modo completo — mesmas colunas de sempre, só filtrado pela categoria escolhida no modal
   const metricsExp = metricsPagoPorLote();
   const linhas = ls.map(l=>{
     const p = produtos.find(pr=>pr.id===l.produto_id);
