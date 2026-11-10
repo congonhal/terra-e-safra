@@ -4657,10 +4657,10 @@ function excelColWidth(header, rows, key){
   return Math.min(46, Math.max(10, max+3));
 }
 function excelEstilarCabecalho(row){
-  row.eachCell(cell=>{
+  row.eachCell((cell, colNumber)=>{
     cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:EXCEL_COR_CABECALHO}};
     cell.font = {name:EXCEL_FONTE, bold:true, color:{argb:EXCEL_COR_CABECALHO_TXT}, size:11};
-    cell.alignment = {vertical:'middle', horizontal:'center', wrapText:true};
+    cell.alignment = {vertical:'middle', horizontal: colNumber===1 ? 'left' : 'center', wrapText:true};
     cell.border = {top:{style:'thin', color:{argb:EXCEL_COR_CABECALHO_BORDA}}, bottom:{style:'medium', color:{argb:EXCEL_COR_CABECALHO_BORDA}}};
   });
   row.height = 22;
@@ -4671,7 +4671,7 @@ function excelEstilarLinhaDados(row, headers, idxLinha){
     cell.font = {name:EXCEL_FONTE};
     if(/\(R\$\)/.test(h)) cell.numFmt = '#,##0.00';
     else if(/%/.test(h) && !/situa/i.test(h)) cell.numFmt = '0.0';
-    if(/\(R\$\)/.test(h) || /%/.test(h) || /^Qtd|^Quantidade/i.test(h)) cell.alignment = {horizontal:'right'};
+    cell.alignment = {horizontal: colNumber===1 ? 'left' : 'center'};
     cell.border = {bottom:{style:'thin', color:{argb:EXCEL_COR_BORDA}}};
     if(idxLinha%2===0){
       cell.fill = {type:'pattern', pattern:'solid', fgColor:{argb:EXCEL_COR_ZEBRA}};
