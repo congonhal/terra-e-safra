@@ -7518,23 +7518,24 @@ function renderRelatorioDia(data){
 }
 
 // ============ RELATÓRIO MENSAL ============
-// Esse relatório usa mês de calendário normal (01 a 30/31) — diferente do resto do app, que segue
-// o ciclo de fechamento da loja (11 a 10).
+// Segue o mesmo ciclo de fechamento da loja usado no resto do app (dia 11 de um mês até dia 10
+// do mês seguinte) — antes usava mês de calendário normal (01 a 30/31), que não batia com o
+// fechamento financeiro real da loja.
 let relatorioMensalDataRef = hojeStr();
 function abrirRelatorioMensal(){
-  const {inicio, fim} = mesCalendario(relatorioMensalDataRef);
-  document.getElementById('relatorioMensalLabel').textContent = '📅 ' + formatMesCalendario(inicio);
+  const {inicio, fim} = periodoFechamento(relatorioMensalDataRef);
+  document.getElementById('relatorioMensalLabel').textContent = '📅 ' + formatPeriodoFechamentoExtenso(inicio, fim);
   renderRelatorioMensal(inicio, fim);
 }
 document.getElementById('relatorioMensalAnterior').addEventListener('click', function(){
-  const {inicio} = mesCalendario(relatorioMensalDataRef);
+  const {inicio} = periodoFechamento(relatorioMensalDataRef);
   let [ano,mes] = inicio.split('-').map(Number);
   mes -= 1; if(mes===0){ mes=12; ano-=1; }
   relatorioMensalDataRef = `${ano}-${String(mes).padStart(2,'0')}-15`;
   abrirRelatorioMensal();
 });
 document.getElementById('relatorioMensalProximo').addEventListener('click', function(){
-  const {inicio} = mesCalendario(relatorioMensalDataRef);
+  const {inicio} = periodoFechamento(relatorioMensalDataRef);
   let [ano,mes] = inicio.split('-').map(Number);
   mes += 1; if(mes===13){ mes=1; ano+=1; }
   relatorioMensalDataRef = `${ano}-${String(mes).padStart(2,'0')}-15`;
@@ -7764,7 +7765,7 @@ document.getElementById('exportRelatorioDiaBtn').onclick = async ()=>{
 };
 
 document.getElementById('exportRelatorioMensalBtn').onclick = async ()=>{
-  const {inicio, fim} = mesCalendario(relatorioMensalDataRef);
+  const {inicio, fim} = periodoFechamento(relatorioMensalDataRef);
   const avistaMes = vendasAvista.filter(v=>v.data>=inicio && v.data<=fim);
   const fiadoMes = vendas.filter(v=>v.data_venda>=inicio && v.data_venda<=fim);
   const movsMes = movimentacoes.filter(m=>m.data>=inicio && m.data<=fim && m.tipo==='venda' && m.quantidade>0);
