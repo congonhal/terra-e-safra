@@ -6100,10 +6100,9 @@ function nomeComVariante(f){ return escapeHtml(f.produto.name) + (f.variante?' (
 // Lista todos os ciclos de fechamento (11 a 10) desde o ciclo da primeira venda registrada até o
 // ciclo atual (de hoje), em ordem cronológica.
 function listarCiclosDesdeAbertura(){
-  let primeiraData = null;
-  movimentacoes.forEach(m=>{ if(m.tipo==='venda' && m.quantidade>0 && m.data && (!primeiraData || m.data<primeiraData)) primeiraData = m.data; });
-  if(!primeiraData) primeiraData = hojeStr();
-  const {inicio: inicioPrimeiro} = periodoFechamento(primeiraData);
+  // Começa fixo no ciclo de 11/07/2026 (abertura real da loja) — ignora o dia 10/07 isolado que
+  // ficou sozinho no ciclo anterior (10/06 a 10/07), que não é um ciclo cheio de movimento.
+  const inicioPrimeiro = '2026-07-11';
   const {inicio: inicioAtual} = periodoFechamento(hojeStr());
   const ciclos = [];
   let [ano, mes] = inicioPrimeiro.split('-').map(Number);
@@ -6136,8 +6135,8 @@ function renderFinRankingsAtual(){
 
   container.innerHTML = `
     <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada, e no final uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não.</p>
-    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:4px;">
-      <table style="width:auto; border-collapse:separate; border-spacing:0;">
+    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:4px; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
+      <table style="width:auto; border-collapse:separate; border-spacing:0; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
         <thead>
           <tr>
             <th style="position:sticky; top:0; left:0; z-index:3; background:var(--paper-2);">Categoria</th>
