@@ -6133,24 +6133,37 @@ function renderFinRankingsAtual(){
     return lista.map((f,i)=>`${i+1}. ${nomeComVariante(f)} — ${formatarQtdRanking(f)}`).join('<br>');
   }
 
+  const corCabecalhoCiclo = 'var(--paper-2)';
+  const corCabecalhoAno = 'var(--sage)';
   container.innerHTML = `
     <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada, e no final uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não.</p>
-    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:4px; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
-      <table style="width:auto; border-collapse:separate; border-spacing:0; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
+    <style>
+      #finRankingsMatriz{ border-collapse:separate; border-spacing:0; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+      #finRankingsMatriz th, #finRankingsMatriz td{ border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 12px; }
+      #finRankingsMatriz thead th{ border-bottom:2px solid var(--bark); }
+      #finRankingsMatriz td:first-child, #finRankingsMatriz th:first-child{ border-right:2px solid var(--bark); }
+      #finRankingsMatriz .col-ano-primeira{ border-left:2px solid var(--bark); }
+      #finRankingsMatriz tbody tr:hover td{ filter:brightness(0.95); }
+    </style>
+    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:6px; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
+      <table id="finRankingsMatriz" style="width:auto;">
         <thead>
           <tr>
-            <th style="position:sticky; top:0; left:0; z-index:3; background:var(--paper-2);">Categoria</th>
-            ${ciclos.map(c=>`<th style="position:sticky; top:0; z-index:2; background:var(--paper-2); min-width:180px;">${formatPeriodoFechamento(c.inicio, c.fim)}</th>`).join('')}
-            ${anos.map(a=>`<th style="position:sticky; top:0; z-index:2; background:var(--paper-2); min-width:180px;">🏆 Ano ${a}</th>`).join('')}
+            <th style="position:sticky; top:0; left:0; z-index:3; background:${corCabecalhoCiclo};">Categoria</th>
+            ${ciclos.map(c=>`<th style="position:sticky; top:0; z-index:2; background:${corCabecalhoCiclo}; min-width:180px;">${formatPeriodoFechamento(c.inicio, c.fim)}</th>`).join('')}
+            ${anos.map((a,i)=>`<th class="${i===0?'col-ano-primeira':''}" style="position:sticky; top:0; z-index:2; background:${corCabecalhoAno}; color:#fff; min-width:180px;">🏆 Ano ${a}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
-          ${categoriasTodas.map(cat=>`
+          ${categoriasTodas.map((cat,idx)=>{
+            const corLinha = idx%2===0 ? 'var(--card)' : 'var(--paper)';
+            return `
           <tr>
-            <td class="produto-cell" style="position:sticky; left:0; z-index:1; background:var(--card); white-space:nowrap;">${escapeHtml(cat)}</td>
-            ${porCiclo.map(pc=>`<td style="white-space:nowrap;">${celula(pc, cat)}</td>`).join('')}
-            ${porAno.map(pa=>`<td style="white-space:nowrap;">${celula(pa, cat)}</td>`).join('')}
-          </tr>`).join('')}
+            <td class="produto-cell" style="position:sticky; left:0; z-index:1; background:${corLinha}; white-space:nowrap;">${escapeHtml(cat)}</td>
+            ${porCiclo.map(pc=>`<td style="white-space:nowrap; background:${corLinha};">${celula(pc, cat)}</td>`).join('')}
+            ${porAno.map((pa,i)=>`<td class="${i===0?'col-ano-primeira':''}" style="white-space:nowrap; background:${corLinha};">${celula(pa, cat)}</td>`).join('')}
+          </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
