@@ -6099,13 +6099,14 @@ function agregarQtdVendidaPorProduto(inicio, fim){
   });
   return Object.values(porChave);
 }
+const FIN_RANKINGS_TOP_N = 5;
 function calcularRankingPorCategoria(inicio, fim){
   const itens = agregarQtdVendidaPorProduto(inicio, fim);
   const porCategoria = {};
   itens.forEach(f=>{ (porCategoria[f.categoria] = porCategoria[f.categoria]||[]).push(f); });
   Object.keys(porCategoria).forEach(cat=>{
     porCategoria[cat].sort((a,b)=>b.qtd-a.qtd);
-    porCategoria[cat] = porCategoria[cat].slice(0,3);
+    porCategoria[cat] = porCategoria[cat].slice(0,FIN_RANKINGS_TOP_N);
   });
   return porCategoria;
 }
@@ -6231,7 +6232,7 @@ function renderFinRankingsAtual(){
   }
 
   container.innerHTML = `
-    <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada — em blocos de ${FIN_RANKINGS_TAMANHO_BLOCO} ciclos — e, no último bloco, uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não. Abraçadeira, agulha e corda não disputam vaga no top 3 (a unidade vendida engana a quantidade — pacote de 100un, metragem, etc.); a corda ainda aparece como nota (*) com o total vendido, quando vendeu algo no período.</p>
+    <p class="search-hint" style="margin-bottom:14px;">💡 Top ${FIN_RANKINGS_TOP_N} produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada — em blocos de ${FIN_RANKINGS_TAMANHO_BLOCO} ciclos — e, no último bloco, uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não. Abraçadeira, agulha e corda não disputam vaga no ranking (a unidade vendida engana a quantidade — pacote de 100un, metragem, etc.); a corda ainda aparece como nota (*) com o total vendido, quando vendeu algo no período.</p>
     ${blocos.map((ciclosDoBloco, blocoIdx)=> montarBloco(ciclosDoBloco, blocoIdx*FIN_RANKINGS_TAMANHO_BLOCO, blocoIdx===blocos.length-1, blocoIdx)).join('')}
   `;
   blocos.forEach((_,blocoIdx)=>{
