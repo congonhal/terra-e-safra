@@ -6058,23 +6058,13 @@ function htmlResumoVendas(rv){
   `;
 }
 
-// ============ FINANCEIRO · 🏆 MAIS VENDIDOS (ranking por categoria + campeão do ano) ============
-// Quantidade = total vendido no ciclo (pago ou não, mesmo critério do Relatório Mensal/Análises),
-// porque aqui a pergunta é "o que mais saiu da loja", não "quanto já virou dinheiro".
-let finRankingsDataRef = hojeStr();
-function finRankingsDeslocarCiclo(direcao){
-  const {inicio} = periodoFechamento(finRankingsDataRef);
-  let [ano,mes] = inicio.split('-').map(Number);
-  mes += direcao;
-  if(mes===0){ mes=12; ano-=1; }
-  if(mes===13){ mes=1; ano+=1; }
-  finRankingsDataRef = `${ano}-${String(mes).padStart(2,'0')}-15`;
-  renderFinRankingsAtual();
-}
-function renderFinRankingsAtual(){
-  const {inicio, fim} = periodoFechamento(finRankingsDataRef);
-  renderFinRankings(inicio, fim);
-}
+// ============ FINANCEIRO · 🏆 MAIS VENDIDOS (matriz categoria × ciclo, + coluna do ano) ============
+// Quantidade = total vendido no ciclo/ano (pago ou não, mesmo critério do Relatório Mensal/
+// Análises), porque aqui a pergunta é "o que mais saiu da loja", não "quanto já virou dinheiro".
+// Uma tabela só, com TODOS os ciclos (11 a 10) desde a primeira venda registrada até o ciclo atual,
+// lado a lado — sem precisar clicar em "próximo"/"anterior" — mais uma coluna no final por ano com
+// vendas, somando todos os ciclos daquele ano. Cabeçalho e primeira coluna (categoria) ficam fixos
+// (position:sticky) enquanto rola.
 // Agrega, por produto+variante+unidade (mesma chave usada no resto do Financeiro, já considerando
 // os PRODUTOS_SINONIMOS), a quantidade vendida dentro do intervalo [inicio, fim] informado.
 function agregarQtdVendidaPorProduto(inicio, fim){
@@ -6102,52 +6092,70 @@ function calcularRankingPorCategoria(inicio, fim){
   });
   return porCategoria;
 }
-function calcularRankingAno(dataRef){
-  const ano = dataRef.split('-')[0];
-  return agregarQtdVendidaPorProduto(`${ano}-01-01`, `${ano}-12-31`)
-    .sort((a,b)=>b.qtd-a.qtd).slice(0,3);
-}
 function formatarQtdRanking(f){
   if(f.pesoSacoRef && Number(f.pesoSacoRef)>0) return `${formatarNumeroSacos(f.qtd/Number(f.pesoSacoRef))} sc`;
   return `${fmtQtd(f.qtd)} ${escapeHtml(f.unidade||'')}`;
 }
 function nomeComVariante(f){ return escapeHtml(f.produto.name) + (f.variante?' ('+escapeHtml(f.variante)+')':''); }
-function renderFinRankings(inicio, fim){
+// Lista todos os ciclos de fechamento (11 a 10) desde o ciclo da primeira venda registrada até o
+// ciclo atual (de hoje), em ordem cronológica.
+function listarCiclosDesdeAbertura(){
+  let primeiraData = null;
+  movimentacoes.forEach(m=>{ if(m.tipo==='venda' && m.quantidade>0 && m.data && (!primeiraData || m.data<primeiraData)) primeiraData = m.data; });
+  if(!primeiraData) primeiraData = hojeStr();
+  const {inicio: inicioPrimeiro} = periodoFechamento(primeiraData);
+  const {inicio: inicioAtual} = periodoFechamento(hojeStr());
+  const ciclos = [];
+  let [ano, mes] = inicioPrimeiro.split('-').map(Number);
+  const [anoFinal, mesFinal] = inicioAtual.split('-').map(Number);
+  while(ano<anoFinal || (ano===anoFinal && mes<=mesFinal)){
+    ciclos.push(periodoFechamento(`${ano}-${String(mes).padStart(2,'0')}-15`));
+    mes += 1; if(mes===13){ mes=1; ano+=1; }
+  }
+  return ciclos;
+}
+function anosComVenda(){
+  const anos = new Set();
+  movimentacoes.forEach(m=>{ if(m.tipo==='venda' && m.quantidade>0 && m.data) anos.add(m.data.slice(0,4)); });
+  return [...anos].sort();
+}
+function renderFinRankingsAtual(){
   const container = document.getElementById('finRankingsContent');
-  const porCategoria = calcularRankingPorCategoria(inicio, fim);
-  const categorias = Object.keys(porCategoria).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const rankingAno = calcularRankingAno(inicio);
-  const ano = inicio.split('-')[0];
+  const ciclos = listarCiclosDesdeAbertura();
+  const anos = anosComVenda();
+  const categoriasTodas = [...new Set(produtos.map(p=>categoriaLabel(p.tipo)))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+
+  const porCiclo = ciclos.map(c=>calcularRankingPorCategoria(c.inicio, c.fim));
+  const porAno = anos.map(a=>calcularRankingPorCategoria(`${a}-01-01`, `${a}-12-31`));
+
+  function celula(porCat, cat){
+    const lista = porCat[cat];
+    if(!lista || lista.length===0) return '<span style="opacity:.45;">—</span>';
+    return lista.map((f,i)=>`${i+1}. ${nomeComVariante(f)} — ${formatarQtdRanking(f)}`).join('<br>');
+  }
 
   container.innerHTML = `
-    <div class="resumo-periodo-nav">
-      <button class="mini-btn" id="finRankingsAnterior">◀ ciclo anterior</button>
-      <div class="resumo-periodo-label">📅 Fechamento: <b>${formatPeriodoFechamento(inicio, fim)}</b></div>
-      <button class="mini-btn" id="finRankingsProximo">próximo ciclo ▶</button>
+    <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada, e no final uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não.</p>
+    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:4px;">
+      <table style="width:auto; border-collapse:separate; border-spacing:0;">
+        <thead>
+          <tr>
+            <th style="position:sticky; top:0; left:0; z-index:3; background:var(--paper-2);">Categoria</th>
+            ${ciclos.map(c=>`<th style="position:sticky; top:0; z-index:2; background:var(--paper-2); min-width:180px;">${formatPeriodoFechamento(c.inicio, c.fim)}</th>`).join('')}
+            ${anos.map(a=>`<th style="position:sticky; top:0; z-index:2; background:var(--paper-2); min-width:180px;">🏆 Ano ${a}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${categoriasTodas.map(cat=>`
+          <tr>
+            <td class="produto-cell" style="position:sticky; left:0; z-index:1; background:var(--card); white-space:nowrap;">${escapeHtml(cat)}</td>
+            ${porCiclo.map(pc=>`<td style="white-space:nowrap;">${celula(pc, cat)}</td>`).join('')}
+            ${porAno.map(pa=>`<td style="white-space:nowrap;">${celula(pa, cat)}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
     </div>
-    <p class="search-hint" style="margin:8px 0 14px;">💡 Top 3 produtos mais vendidos de cada categoria dentro desse ciclo (11 a 10). Conta o total vendido no ciclo, pago ou não.</p>
-    <table>
-      <thead><tr><th>Categoria</th><th>Mais vendidos no ciclo</th></tr></thead>
-      <tbody>
-        ${categorias.length===0 ? '<tr><td colspan="2" class="empty-state">Nenhuma venda nesse ciclo.</td></tr>' : categorias.map(cat=>`
-        <tr>
-          <td class="produto-cell">${escapeHtml(cat)}</td>
-          <td>${porCategoria[cat].map((f,i)=>`${i+1}. ${nomeComVariante(f)} — ${formatarQtdRanking(f)}`).join('<br>')}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-
-    <div class="form-section-label" style="margin-top:28px;">🏆 Mais vendidos no ano de ${ano} (todos os ciclos somados)</div>
-    <table>
-      <thead><tr><th>#</th><th>Produto</th><th>Quantidade</th></tr></thead>
-      <tbody>
-        ${rankingAno.length===0 ? '<tr><td colspan="3" class="empty-state">Nenhuma venda nesse ano.</td></tr>' : rankingAno.map((f,i)=>`
-        <tr><td>${i+1}</td><td class="produto-cell">${nomeComVariante(f)}</td><td>${formatarQtdRanking(f)}</td></tr>`).join('')}
-      </tbody>
-    </table>
   `;
-  document.getElementById('finRankingsAnterior').addEventListener('click', ()=>finRankingsDeslocarCiclo(-1));
-  document.getElementById('finRankingsProximo').addEventListener('click', ()=>finRankingsDeslocarCiclo(1));
 }
 
 let finTop = 'resumo';
