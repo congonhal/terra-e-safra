@@ -6067,6 +6067,18 @@ function htmlResumoVendas(rv){
 // lado a lado — sem precisar clicar em "próximo"/"anterior" — mais uma coluna no final por ano com
 // vendas, somando todos os ciclos daquele ano. Cabeçalho e primeira coluna (categoria) ficam fixos
 // (position:sticky) enquanto rola.
+// Produtos que a Bia pediu pra nunca entrar nesse ranking de mais vendidos — o motivo é sempre o
+// mesmo: a unidade vendida engana a quantidade (ex: abraçadeira vem em pacote de 100un, então
+// "vendeu 100un" pode ser só 1 pacote, não um item muito vendido de verdade).
+const RANKING_PRODUTOS_EXCLUIDOS = ['abracadeira', 'agulha'];
+// Produtos que continuam entrando no ranking, mas levam um "*" de aviso — também não devem ser
+// lidos como "item muito vendido" (ex: corda é vendida por metro, metragem alta não é o mesmo que
+// alta demanda), só que, diferente dos excluídos acima, a Bia quer continuar vendo eles na lista.
+const RANKING_PRODUTOS_FLAGRADOS = ['corda'];
+function produtoNoRanking(nome, lista){
+  const n = normalize(nome||'');
+  return lista.some(k=>n.includes(k));
+}
 // Agrega, por produto+variante+unidade (mesma chave usada no resto do Financeiro, já considerando
 // os PRODUTOS_SINONIMOS), a quantidade vendida dentro do intervalo [inicio, fim] informado.
 function agregarQtdVendidaPorProduto(inicio, fim){
@@ -6077,6 +6089,7 @@ function agregarQtdVendidaPorProduto(inicio, fim){
     const produtoIdCan = produtoIdCanonico(l.produto_id);
     const p = produtos.find(pr=>pr.id===produtoIdCan);
     if(!p) return;
+    if(produtoNoRanking(p.name, RANKING_PRODUTOS_EXCLUIDOS)) return;
     const chave = produtoIdCan+'|'+(l.variante||'')+'|'+(l.observacao||'un');
     if(!porChave[chave]) porChave[chave] = {produto:p, variante:l.variante||'', unidade:l.observacao||'un', pesoSacoRef:l.peso_por_saco||null, qtd:0, categoria:categoriaLabel(p.tipo)};
     porChave[chave].qtd += Number(m.quantidade);
@@ -6098,7 +6111,10 @@ function formatarQtdRanking(f){
   if(f.pesoSacoRef && Number(f.pesoSacoRef)>0) return `${formatarNumeroSacos(f.qtd/Number(f.pesoSacoRef))} sc`;
   return `${fmtQtd(f.qtd)} ${escapeHtml(f.unidade||'')}`;
 }
-function nomeComVariante(f){ return escapeHtml(f.produto.name) + (f.variante?' ('+escapeHtml(f.variante)+')':''); }
+function nomeComVariante(f){
+  const flag = produtoNoRanking(f.produto.name, RANKING_PRODUTOS_FLAGRADOS) ? ' *' : '';
+  return escapeHtml(f.produto.name) + (f.variante?' ('+escapeHtml(f.variante)+')':'') + flag;
+}
 // Lista todos os ciclos de fechamento (11 a 10) desde o ciclo da primeira venda registrada até o
 // ciclo atual (de hoje), em ordem cronológica.
 function listarCiclosDesdeAbertura(){
@@ -6120,14 +6136,12 @@ function anosComVenda(){
   movimentacoes.forEach(m=>{ if(m.tipo==='venda' && m.quantidade>0 && m.data) anos.add(m.data.slice(0,4)); });
   return [...anos].sort();
 }
+const FIN_RANKINGS_TAMANHO_BLOCO = 12;
 function renderFinRankingsAtual(){
   const container = document.getElementById('finRankingsContent');
   const ciclos = listarCiclosDesdeAbertura();
   const anos = anosComVenda();
   const categoriasTodas = [...new Set(produtos.map(p=>categoriaLabel(p.tipo)))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-
-  const porCiclo = ciclos.map(c=>calcularRankingPorCategoria(c.inicio, c.fim));
-  const porAno = anos.map(a=>calcularRankingPorCategoria(`${a}-01-01`, `${a}-12-31`));
 
   function celula(porCat, cat){
     const lista = porCat[cat];
@@ -6137,39 +6151,73 @@ function renderFinRankingsAtual(){
 
   const corCabecalhoCiclo = 'var(--paper-2)';
   const corCabecalhoAno = 'var(--sage)';
+
+  // Divide os ciclos em blocos de 12 — a primeira tabela mostra os ciclos 1 a 12, se existir ciclo
+  // 13 em diante aparece uma NOVA tabela embaixo (ciclos 13 a 24), e assim por diante. Só o último
+  // bloco (o mais recente) leva as colunas de Ano, pra não repetir o mesmo total em todo bloco. Por
+  // padrão só o último bloco fica aberto — os anteriores começam ocultos, pra não lotar a tela.
+  const blocos = [];
+  for(let i=0; i<ciclos.length; i+=FIN_RANKINGS_TAMANHO_BLOCO) blocos.push(ciclos.slice(i, i+FIN_RANKINGS_TAMANHO_BLOCO));
+  if(blocos.length===0) blocos.push([]);
+
+  function montarBloco(ciclosDoBloco, offsetGlobal, incluirAno, blocoIdx){
+    const porCiclo = ciclosDoBloco.map(c=>calcularRankingPorCategoria(c.inicio, c.fim));
+    const porAno = incluirAno ? anos.map(a=>calcularRankingPorCategoria(`${a}-01-01`, `${a}-12-31`)) : [];
+    const aberto = blocoIdx===blocos.length-1;
+    const cicloDe = offsetGlobal+1, cicloAte = offsetGlobal+ciclosDoBloco.length;
+
+    return `
+    <div style="margin-bottom:18px;">
+      <button class="mini-btn" id="finRankingsToggle-${blocoIdx}" style="margin-bottom:8px;">${aberto?'▼':'▶'} Ciclos ${cicloDe} a ${cicloAte}</button>
+      <div id="finRankingsBloco-${blocoIdx}" class="${aberto?'':'hidden'}">
+        <style>
+          #finRankingsMatriz-${blocoIdx}{ border-collapse:separate; border-spacing:0; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+          #finRankingsMatriz-${blocoIdx} th, #finRankingsMatriz-${blocoIdx} td{ border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 12px; }
+          #finRankingsMatriz-${blocoIdx} thead th{ border-bottom:2px solid var(--bark); }
+          #finRankingsMatriz-${blocoIdx} td:first-child, #finRankingsMatriz-${blocoIdx} th:first-child{ border-right:2px solid var(--bark); }
+          #finRankingsMatriz-${blocoIdx} .col-ano-primeira{ border-left:2px solid var(--bark); }
+          #finRankingsMatriz-${blocoIdx} tbody tr:hover td{ filter:brightness(0.95); }
+        </style>
+        <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:6px; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
+          <table id="finRankingsMatriz-${blocoIdx}" style="width:auto;">
+            <thead>
+              <tr>
+                <th style="position:sticky; top:0; left:0; z-index:3; background:${corCabecalhoCiclo};">Categoria</th>
+                ${ciclosDoBloco.map((c,i)=>`<th style="position:sticky; top:0; z-index:2; background:${corCabecalhoCiclo}; min-width:180px; text-align:center;">
+                  <div style="opacity:.65; margin-bottom:3px;">Ciclo ${offsetGlobal+i+1}</div>
+                  <div style="font-size:12px;">${formatPeriodoFechamento(c.inicio, c.fim)}</div>
+                </th>`).join('')}
+                ${incluirAno ? anos.map((a,i)=>`<th class="${i===0?'col-ano-primeira':''}" style="position:sticky; top:0; z-index:2; background:${corCabecalhoAno}; color:#fff; min-width:180px;">🏆 Ano ${a}</th>`).join('') : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${categoriasTodas.map((cat,idx)=>{
+                const corLinha = idx%2===0 ? 'var(--card)' : 'var(--paper)';
+                return `
+              <tr>
+                <td class="produto-cell" style="position:sticky; left:0; z-index:1; background:${corLinha}; white-space:nowrap;">${escapeHtml(cat)}</td>
+                ${porCiclo.map(pc=>`<td style="white-space:nowrap; background:${corLinha};">${celula(pc, cat)}</td>`).join('')}
+                ${incluirAno ? porAno.map((pa,i)=>`<td class="${i===0?'col-ano-primeira':''}" style="white-space:nowrap; background:${corLinha};">${celula(pa, cat)}</td>`).join('') : ''}
+              </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
   container.innerHTML = `
-    <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada, e no final uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não.</p>
-    <style>
-      #finRankingsMatriz{ border-collapse:separate; border-spacing:0; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
-      #finRankingsMatriz th, #finRankingsMatriz td{ border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 12px; }
-      #finRankingsMatriz thead th{ border-bottom:2px solid var(--bark); }
-      #finRankingsMatriz td:first-child, #finRankingsMatriz th:first-child{ border-right:2px solid var(--bark); }
-      #finRankingsMatriz .col-ano-primeira{ border-left:2px solid var(--bark); }
-      #finRankingsMatriz tbody tr:hover td{ filter:brightness(0.95); }
-    </style>
-    <div style="overflow:auto; max-width:100%; max-height:72vh; border:1px solid var(--line); border-radius:6px; -webkit-text-size-adjust:100%; text-size-adjust:100%;">
-      <table id="finRankingsMatriz" style="width:auto;">
-        <thead>
-          <tr>
-            <th style="position:sticky; top:0; left:0; z-index:3; background:${corCabecalhoCiclo};">Categoria</th>
-            ${ciclos.map(c=>`<th style="position:sticky; top:0; z-index:2; background:${corCabecalhoCiclo}; min-width:180px;">${formatPeriodoFechamento(c.inicio, c.fim)}</th>`).join('')}
-            ${anos.map((a,i)=>`<th class="${i===0?'col-ano-primeira':''}" style="position:sticky; top:0; z-index:2; background:${corCabecalhoAno}; color:#fff; min-width:180px;">🏆 Ano ${a}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${categoriasTodas.map((cat,idx)=>{
-            const corLinha = idx%2===0 ? 'var(--card)' : 'var(--paper)';
-            return `
-          <tr>
-            <td class="produto-cell" style="position:sticky; left:0; z-index:1; background:${corLinha}; white-space:nowrap;">${escapeHtml(cat)}</td>
-            ${porCiclo.map(pc=>`<td style="white-space:nowrap; background:${corLinha};">${celula(pc, cat)}</td>`).join('')}
-            ${porAno.map((pa,i)=>`<td class="${i===0?'col-ano-primeira':''}" style="white-space:nowrap; background:${corLinha};">${celula(pa, cat)}</td>`).join('')}
-          </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
+    <p class="search-hint" style="margin-bottom:14px;">💡 Top 3 produtos mais vendidos de cada categoria, ciclo por ciclo (11 a 10) desde a primeira venda registrada — em blocos de ${FIN_RANKINGS_TAMANHO_BLOCO} ciclos — e, no último bloco, uma coluna por ano somando todos os ciclos daquele ano. Conta o total vendido, pago ou não. Abraçadeira e agulha não entram nesse ranking (unidade vendida engana a quantidade). * = item que aparece na lista mas que, pela unidade de venda (ex: corda por metro), não deve ser lido como "muito vendido".</p>
+    ${blocos.map((ciclosDoBloco, blocoIdx)=> montarBloco(ciclosDoBloco, blocoIdx*FIN_RANKINGS_TAMANHO_BLOCO, blocoIdx===blocos.length-1, blocoIdx)).join('')}
   `;
+  blocos.forEach((_,blocoIdx)=>{
+    document.getElementById(`finRankingsToggle-${blocoIdx}`).addEventListener('click', ()=>{
+      const corpo = document.getElementById(`finRankingsBloco-${blocoIdx}`);
+      const agora = corpo.classList.toggle('hidden');
+      document.getElementById(`finRankingsToggle-${blocoIdx}`).textContent = (agora?'▶':'▼') + document.getElementById(`finRankingsToggle-${blocoIdx}`).textContent.slice(1);
+    });
+  });
 }
 
 let finTop = 'resumo';
