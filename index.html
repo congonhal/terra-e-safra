@@ -477,7 +477,7 @@ td input.wide{width:74px;}
           <div id="nlCategoriaWrap">
             <label>Categoria</label>
             <select id="nlCategoria">
-              <option value="Ferramentas">Ferramentas/Utilitários</option>
+              <option value="Ferramentas/Utilitários">Ferramentas/Utilitários</option>
               <option value="Acessórios Cavalo">Acessórios Cavalo</option>
               <option value="Acessórios">Acessórios</option>
               <option value="Fertilizantes">Fertilizantes</option>
@@ -2566,7 +2566,7 @@ function renderEstoque(){
             <div>
               <label>Categoria</label>
               <select id="elCategoria-${l.id}">
-                <option value="Ferramentas" ${p.tipo==='Ferramentas'?'selected':''}>Ferramentas/Utilitários</option>
+                <option value="Ferramentas/Utilitários" ${p.tipo==='Ferramentas/Utilitários'?'selected':''}>Ferramentas/Utilitários</option>
                 <option value="Acessórios Cavalo" ${p.tipo==='Acessórios Cavalo'?'selected':''}>Acessórios Cavalo</option>
                 <option value="Acessórios" ${p.tipo==='Acessórios'?'selected':''}>Acessórios</option>
                 <option value="Fertilizantes" ${p.tipo==='Fertilizantes'?'selected':''}>Fertilizantes</option>
@@ -3687,9 +3687,11 @@ function categoriaEfetivaNovoLote(){
 // Lista fixa de categorias que sempre aparecem no dropdown de cadastro (tanto no "+ adicionar
 // lote" quanto na edição de um lote existente), além da opção "+ outra categoria..." pra qualquer
 // coisa fora dessa lista. Os valores internos das categorias que já existiam antes (remedio/racao/
-// proteinado/Ferramentas/Fertilizantes) foram mantidos como estavam, pra não mudar nenhum produto
-// já cadastrado — só o rótulo do "Ferramentas" mudou de exibição pra "Ferramentas/Utilitários".
-const CATEGORIAS_PADRAO_VALORES = ['Ferramentas','Acessórios Cavalo','Acessórios','Fertilizantes','remedio','proteinado','Parafusos/Pregos/Porcas/Arruelas','Pesticida','Pet','racao','Roupas','Outros'];
+// proteinado/Fertilizantes) foram mantidos como estavam, pra não mudar nenhum produto já cadastrado.
+// A categoria "Ferramentas" (que tinha um valor interno diferente de "Ferramentas/Utilitários",
+// mesmo mostrando o mesmo nome na tela) foi unificada — todo produto que estava nela foi migrado
+// pra "Ferramentas/Utilitários", que já era usada por bem mais produtos.
+const CATEGORIAS_PADRAO_VALORES = ['Ferramentas/Utilitários','Acessórios Cavalo','Acessórios','Fertilizantes','remedio','proteinado','Parafusos/Pregos/Porcas/Arruelas','Pesticida','Pet','racao','Roupas','Outros'];
 function categoriaVendePorSaco(cat){
   return cat==='racao' || cat==='proteinado' || cat==='Fertilizantes';
 }
