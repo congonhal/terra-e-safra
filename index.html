@@ -978,6 +978,7 @@ td input.wide{width:74px;}
       <div class="subtabs">
         <button class="subtab active" data-fintop="resumo">📊 Resumo</button>
         <button class="subtab" data-fintop="geral">🗂️ Controle</button>
+        <button class="subtab" data-fintop="rankings">🏆 Mais Vendidos</button>
       </div>
 
       <div id="finResumoWrap">
@@ -986,6 +987,10 @@ td input.wide{width:74px;}
 
       <div id="finControleLojaWrap" class="hidden">
         <div id="finControleLojaContent"></div>
+      </div>
+
+      <div id="finRankingsWrap" class="hidden">
+        <div id="finRankingsContent"></div>
       </div>
 
       <div id="finControleGeralWrap" class="hidden">
@@ -1736,7 +1741,7 @@ function enter(kind){
   if(kind==='estoque'){ document.getElementById('pageTitle').textContent='Estoque'; document.getElementById('pageSub').textContent='Controle de quantidade: produtos, lotes e conferência.'; renderEstoqueCatPills(); renderEstoque(); }
   if(kind==='fiado'){ document.getElementById('pageTitle').textContent='Vendas'; document.getElementById('pageSub').textContent='Registro do dia a dia, conferência de pagamento e fiado.'; switchVendaView(vendaView); }
   if(kind==='descricao'){ document.getElementById('pageTitle').textContent=LABELS[currentTipo].titulo; document.getElementById('pageSub').textContent=LABELS[currentTipo].sub; switchTipo(currentTipo); switchMedSub('vencimentos'); }
-  if(kind==='financeiro'){ document.getElementById('pageTitle').textContent='Financeiro'; document.getElementById('pageSub').textContent='Controle de entradas, saídas e retirada dos sócios.'; if(finTop==='resumo') renderFinResumo(); else renderFinanceiroAtual(); }
+  if(kind==='financeiro'){ document.getElementById('pageTitle').textContent='Financeiro'; document.getElementById('pageSub').textContent='Controle de entradas, saídas e retirada dos sócios.'; if(finTop==='resumo') renderFinResumo(); else if(finTop==='rankings') renderFinRankingsAtual(); else renderFinanceiroAtual(); }
   if(kind==='consultoria'){ document.getElementById('pageTitle').textContent='Consultoria Rural'; document.getElementById('pageSub').textContent='Projetos e serviços de consultoria rural do Lucas.'; renderConsultoria(); }
   if(kind==='fertilizantes'){ document.getElementById('pageTitle').textContent='Fertilizantes'; document.getElementById('pageSub').textContent='Controle de vendas e comissão — estoque próprio ou direto de fábrica.'; renderFertilizantes(); }
 }
@@ -6052,6 +6057,99 @@ function htmlResumoVendas(rv){
     </div>
   `;
 }
+
+// ============ FINANCEIRO · 🏆 MAIS VENDIDOS (ranking por categoria + campeão do ano) ============
+// Quantidade = total vendido no ciclo (pago ou não, mesmo critério do Relatório Mensal/Análises),
+// porque aqui a pergunta é "o que mais saiu da loja", não "quanto já virou dinheiro".
+let finRankingsDataRef = hojeStr();
+function finRankingsDeslocarCiclo(direcao){
+  const {inicio} = periodoFechamento(finRankingsDataRef);
+  let [ano,mes] = inicio.split('-').map(Number);
+  mes += direcao;
+  if(mes===0){ mes=12; ano-=1; }
+  if(mes===13){ mes=1; ano+=1; }
+  finRankingsDataRef = `${ano}-${String(mes).padStart(2,'0')}-15`;
+  renderFinRankingsAtual();
+}
+function renderFinRankingsAtual(){
+  const {inicio, fim} = periodoFechamento(finRankingsDataRef);
+  renderFinRankings(inicio, fim);
+}
+// Agrega, por produto+variante+unidade (mesma chave usada no resto do Financeiro, já considerando
+// os PRODUTOS_SINONIMOS), a quantidade vendida dentro do intervalo [inicio, fim] informado.
+function agregarQtdVendidaPorProduto(inicio, fim){
+  const porChave = {};
+  movimentacoes.filter(m=>m.tipo==='venda' && m.quantidade>0 && m.data>=inicio && m.data<=fim).forEach(m=>{
+    const l = lotes.find(x=>x.id===m.lote_id);
+    if(!l) return;
+    const produtoIdCan = produtoIdCanonico(l.produto_id);
+    const p = produtos.find(pr=>pr.id===produtoIdCan);
+    if(!p) return;
+    const chave = produtoIdCan+'|'+(l.variante||'')+'|'+(l.observacao||'un');
+    if(!porChave[chave]) porChave[chave] = {produto:p, variante:l.variante||'', unidade:l.observacao||'un', pesoSacoRef:l.peso_por_saco||null, qtd:0, categoria:categoriaLabel(p.tipo)};
+    porChave[chave].qtd += Number(m.quantidade);
+    if(!porChave[chave].pesoSacoRef && l.peso_por_saco) porChave[chave].pesoSacoRef = l.peso_por_saco;
+  });
+  return Object.values(porChave);
+}
+function calcularRankingPorCategoria(inicio, fim){
+  const itens = agregarQtdVendidaPorProduto(inicio, fim);
+  const porCategoria = {};
+  itens.forEach(f=>{ (porCategoria[f.categoria] = porCategoria[f.categoria]||[]).push(f); });
+  Object.keys(porCategoria).forEach(cat=>{
+    porCategoria[cat].sort((a,b)=>b.qtd-a.qtd);
+    porCategoria[cat] = porCategoria[cat].slice(0,3);
+  });
+  return porCategoria;
+}
+function calcularRankingAno(dataRef){
+  const ano = dataRef.split('-')[0];
+  return agregarQtdVendidaPorProduto(`${ano}-01-01`, `${ano}-12-31`)
+    .sort((a,b)=>b.qtd-a.qtd).slice(0,3);
+}
+function formatarQtdRanking(f){
+  if(f.pesoSacoRef && Number(f.pesoSacoRef)>0) return `${formatarNumeroSacos(f.qtd/Number(f.pesoSacoRef))} sc`;
+  return `${fmtQtd(f.qtd)} ${escapeHtml(f.unidade||'')}`;
+}
+function nomeComVariante(f){ return escapeHtml(f.produto.name) + (f.variante?' ('+escapeHtml(f.variante)+')':''); }
+function renderFinRankings(inicio, fim){
+  const container = document.getElementById('finRankingsContent');
+  const porCategoria = calcularRankingPorCategoria(inicio, fim);
+  const categorias = Object.keys(porCategoria).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const rankingAno = calcularRankingAno(inicio);
+  const ano = inicio.split('-')[0];
+
+  container.innerHTML = `
+    <div class="resumo-periodo-nav">
+      <button class="mini-btn" id="finRankingsAnterior">◀ ciclo anterior</button>
+      <div class="resumo-periodo-label">📅 Fechamento: <b>${formatPeriodoFechamento(inicio, fim)}</b></div>
+      <button class="mini-btn" id="finRankingsProximo">próximo ciclo ▶</button>
+    </div>
+    <p class="search-hint" style="margin:8px 0 14px;">💡 Top 3 produtos mais vendidos de cada categoria dentro desse ciclo (11 a 10). Conta o total vendido no ciclo, pago ou não.</p>
+    <table>
+      <thead><tr><th>Categoria</th><th>Mais vendidos no ciclo</th></tr></thead>
+      <tbody>
+        ${categorias.length===0 ? '<tr><td colspan="2" class="empty-state">Nenhuma venda nesse ciclo.</td></tr>' : categorias.map(cat=>`
+        <tr>
+          <td class="produto-cell">${escapeHtml(cat)}</td>
+          <td>${porCategoria[cat].map((f,i)=>`${i+1}. ${nomeComVariante(f)} — ${formatarQtdRanking(f)}`).join('<br>')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="form-section-label" style="margin-top:28px;">🏆 Mais vendidos no ano de ${ano} (todos os ciclos somados)</div>
+    <table>
+      <thead><tr><th>#</th><th>Produto</th><th>Quantidade</th></tr></thead>
+      <tbody>
+        ${rankingAno.length===0 ? '<tr><td colspan="3" class="empty-state">Nenhuma venda nesse ano.</td></tr>' : rankingAno.map((f,i)=>`
+        <tr><td>${i+1}</td><td class="produto-cell">${nomeComVariante(f)}</td><td>${formatarQtdRanking(f)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('finRankingsAnterior').addEventListener('click', ()=>finRankingsDeslocarCiclo(-1));
+  document.getElementById('finRankingsProximo').addEventListener('click', ()=>finRankingsDeslocarCiclo(1));
+}
+
 let finTop = 'resumo';
 document.querySelectorAll('#panel-financeiro > .subtabs > [data-fintop]').forEach(tab=>{
   tab.addEventListener('click', ()=>{
@@ -6060,7 +6158,9 @@ document.querySelectorAll('#panel-financeiro > .subtabs > [data-fintop]').forEac
     finTop = tab.dataset.fintop;
     document.getElementById('finResumoWrap').classList.toggle('hidden', finTop!=='resumo');
     document.getElementById('finControleGeralWrap').classList.toggle('hidden', finTop!=='geral');
+    document.getElementById('finRankingsWrap').classList.toggle('hidden', finTop!=='rankings');
     if(finTop==='resumo') renderFinResumo();
+    else if(finTop==='rankings') renderFinRankingsAtual();
     else renderFinanceiroAtual();
   });
 });
