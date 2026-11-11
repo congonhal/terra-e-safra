@@ -3067,17 +3067,25 @@ function relatorioFiscalPorProduto(lsVisiveis, mesFiltro){
   });
   return {produtos: Object.values(grupos).sort((a,b)=> a.produto.name.localeCompare(b.produto.name) || a.variante.localeCompare(b.variante)), totaisPorForma};
 }
+// Produtos que foram cadastrados duas vezes por engano (mesmo item real, nome digitado diferente)
+// — mapeia o id duplicado pro id "principal", só pra efeito de relatórios/agrupamento. Isso NÃO
+// mexe em nenhum lote nem em nenhum registro do banco: cada cadastro continua existindo exatamente
+// como está, só faz os relatórios somarem os dois como se fossem um produto só.
+const PRODUTOS_SINONIMOS = {
+  'e3999239-e59f-455b-bcc2-3bab1c6308d8': 'bc5acef7-c08f-45e4-ad06-31bc1f2a18a8', // "30 00 20 - UREIA PROTEGIDA" -> "30.00.20 - UREIA PROTEGIDA"
+};
+function produtoIdCanonico(produtoId){ return PRODUTOS_SINONIMOS[produtoId] || produtoId; }
 function financeiroAgregado(lista, metricsPago){
   metricsPago = metricsPago || metricsPagoPorLote();
   const grupos = {};
   lista.forEach(l=>{
-    const key = l.produto_id+'|'+(l.variante||'')+'|'+(l.observacao||'un');
+    const key = produtoIdCanonico(l.produto_id)+'|'+(l.variante||'')+'|'+(l.observacao||'un');
     (grupos[key] = grupos[key]||[]).push(l);
   });
   return Object.keys(grupos).map(key=>{
     const g = grupos[key];
     const first = g[0];
-    const p = produtos.find(pr=>pr.id===first.produto_id);
+    const p = produtos.find(pr=>pr.id===produtoIdCanonico(first.produto_id));
     const receitaPaga = g.reduce((s,l)=>s+((metricsPago[l.id]||{}).receitaPaga||0),0);
     const custoPago = g.reduce((s,l)=>s+((metricsPago[l.id]||{}).custoPago||0),0);
     const impostoPago = g.reduce((s,l)=>s+((metricsPago[l.id]||{}).impostoPago||0),0);
@@ -5290,13 +5298,30 @@ function calcularResumoFechamento(inicio, fim){
 }
 
 // ============ ANÁLISES DO CICLO (aba Resumo) ============
-// Tabela de produtos vendidos: base "efetivo" (só o que já foi pago dentro do ciclo), igual ao
-// restante do Resumo — reaproveita metricsPagoPorLote/financeiroAgregado em vez de recalcular na mão.
+// Tabela de produtos vendidos: a coluna de Quantidade mostra o total vendido no ciclo (vendido
+// ou não, pago ou não — mesmo critério do Relatório Mensal, pela data da movimentação), pra bater
+// com o Relatório Mensal. Receita/lucro/imposto continuam "efetivo" (só o que já foi pago dentro
+// do ciclo), igual ao restante do Resumo, porque representam dinheiro real em caixa.
+function qtdVendidaTotalPorChave(inicio, fim){
+  const porChave = {};
+  movimentacoes.filter(m=>m.tipo==='venda' && m.quantidade>0 && m.data>=inicio && m.data<=fim).forEach(m=>{
+    const l = lotes.find(x=>x.id===m.lote_id);
+    if(!l) return;
+    const chave = produtoIdCanonico(l.produto_id)+'|'+(l.variante||'')+'|'+(l.observacao||'un');
+    porChave[chave] = (porChave[chave]||0) + Number(m.quantidade);
+  });
+  return porChave;
+}
 function calcularAnalisesCiclo(inicio, fim){
   const metricsPago = metricsPagoPorLote(inicio, fim);
+  const qtdVendidaMap = qtdVendidaTotalPorChave(inicio, fim);
   const porProduto = financeiroAgregado(lotes, metricsPago)
-    .filter(f=>f.produto && (f.qtdPaga>0.0009 || Math.abs(f.lucro)>0.004))
-    .sort((a,b)=> b.qtdPaga - a.qtdPaga);
+    .map(f=>{
+      const chave = (f.produto?f.produto.id:'')+'|'+(f.variante||'')+'|'+(f.unidade||'un');
+      return {...f, qtdVendidaTotal: qtdVendidaMap[chave] || 0};
+    })
+    .filter(f=>f.produto && (f.qtdVendidaTotal>0.0009 || Math.abs(f.lucro)>0.004))
+    .sort((a,b)=> b.qtdVendidaTotal - a.qtdVendidaTotal);
 
   // Gráficos de receita e lucro por categoria: usam a venda em GERAL (à vista + fiado), tratando
   // o fiado como se já tivesse sido recebido por inteiro — é só pra dar uma visão comparativa
@@ -5792,10 +5817,10 @@ function htmlResumoEfetivo(r){
 // própria do lote (un, cx, etc.) — igual já é feito em outras telas (ver saldoComSacos).
 function formatarQtdAnalise(f){
   if(f.pesoSacoRef && Number(f.pesoSacoRef)>0){
-    const numSacos = f.qtdPaga/Number(f.pesoSacoRef);
+    const numSacos = f.qtdVendidaTotal/Number(f.pesoSacoRef);
     return `${formatarNumeroSacos(numSacos)} sc`;
   }
-  return `${fmtQtd(f.qtdPaga)} ${escapeHtml(f.unidade||'')}`;
+  return `${fmtQtd(f.qtdVendidaTotal)} ${escapeHtml(f.unidade||'')}`;
 }
 function htmlAnalisesCiclo(an){
   const linhasProdutos = an.porProduto.map(f=>`
@@ -5807,7 +5832,7 @@ function htmlAnalisesCiclo(an){
 
   return `
     <h2 style="font-size:18px; margin-top:28px; margin-bottom:8px;">📊 Análises</h2>
-    <p class="search-hint" style="margin-bottom:10px;">💡 Só produtos da aba Vendas (fertilizante e consultoria não entram aqui). Quantidade segue a mesma regra do resto do Resumo: só o que já foi pago dentro do ciclo.</p>
+    <p class="search-hint" style="margin-bottom:10px;">💡 Só produtos da aba Vendas (fertilizante e consultoria não entram aqui). Quantidade é o total vendido no ciclo (igual ao Relatório Mensal), incluindo fiado ainda não pago — os demais totais do Resumo (recebido, lucro, imposto) continuam só com o que já foi pago de fato.</p>
     ${an.porProduto.length===0 ? '<p class="empty-state">Nenhum produto pago nesse ciclo.</p>' : `
     <table style="margin-bottom:22px;">
       <thead><tr><th>Produto</th><th>Variante</th><th style="text-align:right;">Quantidade</th></tr></thead>
@@ -7611,11 +7636,12 @@ function renderRelatorioMensal(inicio, fim){
   movsMes.forEach(m=>{
     const l = lotes.find(x=>x.id===m.lote_id);
     if(!l) return;
-    const p = produtos.find(pr=>pr.id===l.produto_id);
+    const produtoIdCan = produtoIdCanonico(l.produto_id);
+    const p = produtos.find(pr=>pr.id===produtoIdCan);
     const nome = p ? p.name : '—';
     const variante = (l.variante||'').trim();
     const chave = nome+'|'+variante;
-    if(!porProduto[chave]) porProduto[chave] = {nome, variante, produtoId: l.produto_id, qtdKg:0};
+    if(!porProduto[chave]) porProduto[chave] = {nome, variante, produtoId: produtoIdCan, qtdKg:0};
     porProduto[chave].qtdKg += Number(m.quantidade);
   });
   const ranking = Object.values(porProduto)
