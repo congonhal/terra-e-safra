@@ -816,7 +816,12 @@ td input.wide{width:74px;}
       <p class="search-hint" style="margin-bottom:14px;">💡 Um bloco de notas simples, só pra não esquecer do que precisa comprar/pedir. Escreve o que quiser, marca como feito quando resolver, e apaga quando não precisar mais ver — fica a seu critério, nada aqui é automático.</p>
       <div class="form-row" style="grid-template-columns:1fr;"><div><label>Nova anotação</label><input type="text" id="comprasNovoTexto" placeholder="Ex: ligar pro fornecedor de ração, pedir 20 sacos de ureia..." maxlength="500"></div></div>
       <button class="save-venda-btn" id="comprasAdicionar" style="margin-top:4px;">+ Adicionar</button>
-      <div id="comprasLista" style="margin-top:20px;"></div>
+      <div class="form-row" style="margin-top:22px;">
+        <div><label>Filtrar: adicionado de</label><input type="date" id="comprasFiltroDe"></div>
+        <div><label>até</label><input type="date" id="comprasFiltroAte"></div>
+      </div>
+      <button class="mini-btn" id="comprasFiltroLimpar">limpar filtro</button>
+      <div id="comprasLista" style="margin-top:14px;"></div>
     </div>
 
     <div class="panel hidden" id="panel-fertilizantes">
@@ -8057,21 +8062,49 @@ function consultCalcValorFinal(valorServico, pctCobrada){
 // ============ COMPRAS (bloco de notas simples) ============
 // Só pra anotar e não esquecer — sem ligação com estoque, venda ou financeiro. A pessoa escreve o
 // que quiser, marca como "feito" quando resolver, e apaga quando bem entender (ou nunca apaga).
+// Data real de quando a nota foi digitada e salva (não é editável depois — é o carimbo de quando
+// entrou no sistema), só formatada bonitinho (dd/mm/aaaa às hh:mm) pra pessoa bater o olho e saber
+// se é recente ou antiga.
+function formatarDataHoraCompra(createdAt){
+  if(!createdAt) return '—';
+  const d = new Date(createdAt);
+  const dataStr = d.toLocaleDateString('pt-BR');
+  const horaStr = d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  return `${dataStr} <span class="qv-label">${horaStr}</span>`;
+}
+// O filtro é só pra achar uma anotação mais rápido entre várias — não é prazo nem data de tarefa,
+// é o dia em que aquilo foi digitado/salvo, só pra servir de referência e de busca.
+function comprasNotasFiltradas(){
+  const de = document.getElementById('comprasFiltroDe').value;
+  const ate = document.getElementById('comprasFiltroAte').value;
+  return comprasNotas.filter(n=>{
+    const diaNota = (n.created_at||'').slice(0,10);
+    if(de && diaNota<de) return false;
+    if(ate && diaNota>ate) return false;
+    return true;
+  });
+}
 function renderComprasNotas(){
   const container = document.getElementById('comprasLista');
+  const lista = comprasNotasFiltradas();
   if(comprasNotas.length===0){
     container.innerHTML = `<p class="empty-state">Nenhuma anotação ainda. Escreve ali em cima o que precisa comprar/pedir.</p>`;
     return;
   }
-  container.innerHTML = `<div style="display:flex; flex-direction:column; gap:8px;">
-    ${comprasNotas.map(n=>`
-      <div style="display:flex; align-items:center; gap:10px; background:${n.feito?'#EFE9DA':'#FBF6EA'}; border:1px solid #E3D7BC; border-radius:10px; padding:10px 14px;">
-        <input type="checkbox" data-comprasfeito="${n.id}" ${n.feito?'checked':''} style="width:18px; height:18px; flex-shrink:0;">
-        <span style="flex:1; ${n.feito?'text-decoration:line-through; opacity:.55;':''}">${escapeHtml(n.texto)}</span>
-        <button class="mini-btn" data-comprasapagar="${n.id}" style="color:var(--rust); border-color:var(--rust); flex-shrink:0;">apagar</button>
-      </div>
+  if(lista.length===0){
+    container.innerHTML = `<p class="empty-state">Nenhuma anotação adicionada nesse período.</p>`;
+    return;
+  }
+  container.innerHTML = `<table class="table-completa"><thead><tr><th>Adicionado em <span class="qv-label">(só referência, não é prazo)</span></th><th>Anotação</th><th>Feito</th><th>Ações</th></tr></thead><tbody>
+    ${lista.map(n=>`
+      <tr${n.feito?' style="background:#EFE9DA;"':''}>
+        <td style="white-space:nowrap;">${formatarDataHoraCompra(n.created_at)}</td>
+        <td style="${n.feito?'text-decoration:line-through; opacity:.55;':''}">${escapeHtml(n.texto)}</td>
+        <td><input type="checkbox" data-comprasfeito="${n.id}" ${n.feito?'checked':''} style="width:18px; height:18px;"></td>
+        <td><button class="mini-btn" data-comprasapagar="${n.id}" style="color:var(--rust); border-color:var(--rust); white-space:nowrap;">apagar</button></td>
+      </tr>
     `).join('')}
-  </div>`;
+  </tbody></table>`;
   container.querySelectorAll('[data-comprasfeito]').forEach(chk=>{
     chk.addEventListener('change', async function(){
       const id = this.dataset.comprasfeito;
@@ -8102,6 +8135,13 @@ document.getElementById('comprasAdicionar').addEventListener('click', async ()=>
   if(error){ alert('Erro ao salvar: '+error.message); return; }
   comprasNotas.unshift(data);
   input.value = '';
+  renderComprasNotas();
+});
+document.getElementById('comprasFiltroDe').addEventListener('change', renderComprasNotas);
+document.getElementById('comprasFiltroAte').addEventListener('change', renderComprasNotas);
+document.getElementById('comprasFiltroLimpar').addEventListener('click', ()=>{
+  document.getElementById('comprasFiltroDe').value = '';
+  document.getElementById('comprasFiltroAte').value = '';
   renderComprasNotas();
 });
 document.getElementById('comprasNovoTexto').addEventListener('keydown', e=>{
